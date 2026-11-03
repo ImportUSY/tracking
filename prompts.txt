@@ -1,0 +1,510 @@
+09-10-2026 09:21
+
+en los usuarios falta crear un ROL que serian los Conductores que solo los pueden crear los usuarios con ROL de supervisor o Transportista
+
+en los usuarios se pueda editar también la clave y que los usuarios con rol Supervisor puedan ver la contraseña asignada a todos los usuarios
+
+los usuarios con ROL Conductores solo pueden ver Remesas y Facturas para poder cambiar los estatus al realizar las cargas, salidas, entregas y devoluciones
+
+ 
+Gemini
+Actúa como un Senior Data & Software Engineer. Necesito actualizar la arquitectura, el modelo de datos y la lógica de negocio del programa que estamos desarrollando, integrando 3 nuevos requerimientos funcionales y de control de acceso (RBAC).
+
+Analiza el código actual e implementa los siguientes ajustes mantenido principios SOLID, tipado estricto y un código modular listo para producción:
+
+### 1. Gestión de Roles y Permisos de Creación (Rol Conductor)
+- **Nuevo Rol:** Añade el rol `CONDUCTOR` al sistema (enum de roles o tabla de catálogo correspondiente).
+- **Regla de Jerarquía de Creación:** Restringe la creación de usuarios con rol `CONDUCTOR` únicamente a los usuarios con rol `SUPERVISOR` o `TRANSPORTISTA`.
+    Solo el rol `TRANSPORTISTA` puede agregar usuarios con Rol `CONDUCTOR`
+- **Validación:** Implementa la validación/middleware de seguridad para denegar la creación si el usuario solicitante no posee uno de estos dos roles requeridos.
+
+### 2. Edición de Credenciales y Visibilidad de Passwords
+- **Edición de Clave:** Permite la actualización/edición de la contraseña (`password`) en el módulo de gestión de usuarios.
+- **Acceso Administrativo:** Permite que los usuarios con rol `SUPERVISOR` tengan privilegios para consultar o restablecer las contraseñas asignadas a cualquier usuario.
+- **Seguridad/Buenas Prácticas:** Si las contraseñas se almacenan mediante hash (práctica recomendada), implementa un mecanismo de "reset de contraseña" por el `SUPERVISOR` o expón la funcionalidad requerida garantizando que los logs y endpoints no comprometan la seguridad general del sistema.
+
+### 3. Matriz de Accesos y Flujo Operativo para Conductores
+- **Restricción de Alcance (Scope):** Los usuarios con rol `CONDUCTOR` tendrán acceso restringido exclusivamente a las entidades de **Remesas** y **Facturas**.
+- **Flujo de Trabajo (Estados):** Habilita la capacidad para que el `CONDUCTOR` actualice únicamente los campos de **Estatus/Estado** asociados a los eventos operativos del ciclo de transporte:
+  - Cargas
+  - Salidas
+  - Entregas
+  - Devoluciones
+
+### Entregables Requeridos:
+1. **Actualización de Modelos/Esquemas:** Muestra los cambios necesarios en las clases/modelos de datos (DB schema, Pydantic/DTOs, Enums).
+2. **Lógica de Negocio y Permisos:** Proporciona los controladores, endpoints o servicios modificados con las validaciones de rol aplicadas.
+3. **Instrucciones/Pruebas:** Incluye una breve explicación de cómo probar estas reglas de acceso o casos de uso (p. ej. mediante pruebas unitarias o ejemplos de carga de datos).
+
+Por favor, revisa el código existente y genera las modificaciones correspondientes de forma limpia y completa.
+
+
+
+
+
+
+
+
+13-10-2026 07:53
+
+redactame un promt como ingeniero de datos para decirle a la IA Claude que mejore el programa que se esta trabajando como lo son: 
+
+1.- diferenciar las empresas al iniciar para esto a los usuarios colocar un campo parecido al Rol pero que se llame empresa que traerá de un modulo nuevo llamado empresas y que solo los supervisores los puedan ver, modificar, agregar y eliminar las empresas de transporte
+
+2.- al cargar las remesas debe cargar solo para la empresa a la que pertenezca los del rol de transportista y no verán ni las facturas ni las remeses de otras empresas y los conductores solo verán las facturas y remesas que le corresponden a su empresa 
+
+3.- en la consulta del inicio que hace el vendedor o cualquier otra persona para saber donde esta mi pedido muestre también la imagen o la foto que se tomo cuando se entrego o se realizo una devolución
+
+
+
+******************************
+Gemini 13-10-2026 14:05
+
+Actúa como un Senior Data Engineer y Principal Software Architect. Necesito que refactorices y mejores el sistema actual implementando una arquitectura multi-tenant lógica, políticas estrictas de aislamiento de datos y soporte para manejo de evidencias (Proof of Delivery). 
+
+Por favor, analiza nuestra base de código actual e implementa los siguientes 3 requerimientos con código modular, tipado estricto y aplicando principios SOLID:
+
+### 1. Módulo de Empresas y Arquitectura Multi-Tenant (Relación Usuario-Empresa)
+- **Nuevo Modelo `Empresa`:** Crea un módulo completo para gestionar "Empresas de Transporte" (CRUD completo).
+- **Asociación de Usuarios:** Modifica el modelo de `Usuario` añadiendo un campo/clave foránea (e.g., `empresa_id`) análogo a su Rol, para vincular a cada usuario a una empresa específica.
+- **Control de Acceso (RBAC):** Restringe los endpoints del módulo `Empresa` (Crear, Leer, Actualizar, Eliminar) estricta y únicamente a los usuarios que posean el rol `SUPERVISOR`.
+
+### 2. Aislamiento de Datos (Tenant-level Data Isolation) para Remesas y Facturas
+- **Filtros de Seguridad por Inquilino:** Modifica las consultas, repositorios o controladores de las entidades **Remesas** y **Facturas** para implementar aislamiento de datos.
+- **Regla de Negocio:** 
+  - Si el usuario que consulta tiene el rol `TRANSPORTISTA` o `CONDUCTOR`, las consultas (GET, listados, cargas) deben inyectar automáticamente un filtro (`WHERE empresa_id = usuario.empresa_id`).
+  - Bajo ninguna circunstancia un Transportista o Conductor debe poder consultar, alterar o cargar Remesas o Facturas asociadas a otras empresas.
+- **Implementación:** Sugiere un enfoque elegante (por ejemplo, un middleware, un decorador, o inyección de dependencias en el repositorio) para no repetir la lógica del filtro en cada endpoint.
+
+### 3. Trazabilidad con Evidencia Fotográfica (Proof of Delivery - PoD)
+- **Endpoint de Rastreo (Tracking):** Actualiza la consulta de "Estado de Pedido / Tracking" que utilizan los Vendedores o clientes externos.
+- **Evidencia Visual:** Cuando el estatus del pedido sea una etapa de cierre (Ej. "Entregado" o "Devolución"), la respuesta de la API o la vista debe incluir el enlace (URL pre-firmada, ruta estática o base64 dependiendo de la arquitectura de almacenamiento) de la **foto/imagen de evidencia** tomada en el momento del cambio de estatus.
+- **Esquema de Datos:** Asegúrate de que los modelos de la base de datos de Remesas/Facturas (o la tabla de historial de estatus) soporten el almacenamiento de metadatos de estos archivos (ej. `evidence_image_url`).
+
+### Entregables Esperados:
+1. **DDL / Migraciones:** El esquema de base de datos actualizado, mostrando la nueva tabla `Empresas` y las claves foráneas en `Usuarios`, `Remesas` y `Facturas` (o cómo se relacionan lógicamente).
+2. **Capa de Repositorio / Servicios:** El código que demuestra cómo se aplica el aislamiento de datos (Data Isolation) de forma segura.
+3. **Controladores y DTOs:** Los endpoints actualizados, especialmente el de consulta de tracking público/vendedor incluyendo la evidencia fotográfica.
+
+Procede a generar los cambios en el código explicando brevemente la estrategia técnica utilizada para cada punto.
+
+
+
+
+***********************
+
+
+
+************************
+Actúa como un Ingeniero de Software Senior especializado en desarrollo Web (Frontend/Full-Stack). 
+
+Necesito que actualices la vista de seguimiento público de paquetes (la interfaz actual mostrada en la **Imagen 1**) para que replique la funcionalidad y el diseño de la vista interna de detalles de factura (mostrada en la **Imagen 2**), específicamente en lo que respecta a la **visualización de la foto de entrega**.
+
+### Contexto de los cambios:
+1. **Imagen 1 (Vista actual de tracking público):** Muestra el estado del pedido "FAC-U00099508" con su historial de eventos (*Recibida*, *Cargado*, *En Tránsito*, *Entregada*), pero el evento "Entregada" carece del recurso visual de la fotografía tomada al momento de la entrega.
+2. **Imagen 2 (Vista deseada/Panel interno):** Muestra cómo el evento **Entregada** (y su marca de tiempo/conductor) incluye de manera limpia y estructurada la **fotografía de comprobante de entrega** incrustada justo debajo o al lado de la línea de tiempo del historial.
+
+### Requerimientos técnicos y de diseño:
+* **Integración del Componente de Imagen:** Modifica el componente o plantilla del historial de envíos para que, cuando el estado del evento sea `Entregada` o `Devuelta` y exista una URL/archivo de imagen asociado en la base de datos o API, este se renderice visualmente de forma idéntica al diseño de la **Imagen 2**.
+* **Estructura de Datos:** Asegúrate de que el modelo de datos consuma el campo correspondiente a la foto de entrega (ej. `delivery_proof_url` o equivalente en el objeto del historial o del envío).
+* **Estilos y Responsividad:** Mantén la coherencia visual con el diseño UI actual (tarjetas limpias, bordes redondeados, tipografía y espaciados consistentes). La imagen debe tener un ancho controlado (similar al de la referencia) y permitir previsualizarse correctamente sin romper el layout.
+
+Por favor, analice el código existente y proporcióname los cambios necesarios (en los componentes de frontend y/o llamadas a la API si aplica) para implementar esta mejora.
+
+
+
+
+*********************************
+15-10-2026 07:40
+dame un prompt de un ingeniero de datos para darle las instrucciones a claude y decirle que agregue en la opcion de Cargar REMESA un boton para tomar Foto a facturas, el mismo tomara la foto a la factura que se desea cargar como aparece en la imagen donde el numero de factura lo tomara del cuadro que esta en el color turquesa, el numero de pedido del cuadro amarillo, el cliente del cuadro negro, la fecha de la factura del cuadro verde, el codigo de vendedor del cuadro gris, el numero de bultos del cuadro purpura, el total de la factura del cuadro añil, del total neto del gris azulado y esa informacion sea guardada en la base de datos para asignarle el conductor o chofer
+
+
+
+
+Actúa como un Ingeniero de Datos y Desarrollador Full-Stack Senior especialista en automatización de procesos y sistemas logísticos.
+
+Necesito que diseñes e implementes una nueva funcionalidad dentro de la sección **"Cargar REMESA"** de nuestra aplicación de tracking logístico. El objetivo es permitir que el operador capture la foto de una factura física mediante la cámara, extraiga automáticamente su información clave utilizando un modelo de visión/OCR estructurado, guarde los datos en la base de datos y permita asignar un conductor o chofer a dicha remesa.
+
+### Requerimientos de la Funcionalidad:
+
+1. **Interfaz de Usuario (Frontend):**
+   - Añadir un botón destacado en la vista **"Cargar REMESA"** llamado **"Tomar Foto de Factura"** (que permita utilizar la cámara del dispositivo o cargar la imagen directamente).
+   - Mostrar un estado de carga visual (*spinner*) con el mensaje *"Procesando factura con IA..."* mientras el sistema analiza la imagen.
+
+2. **Extracción de Datos mediante Visión / OCR (Pipeline de Datos):**
+   - Enviar la imagen capturada a un servicio de procesamiento visual (ej. API de visión / LLM) para mapear y extraer con precisión los siguientes campos basándonos en la estructura de la factura:
+     - **Número de Factura:** Extraído del campo encerrado en el cuadro **turquesa (celeste)** (Ej: `340239`).
+     - **Número de Pedido:** Extraído del campo encerrado en el cuadro **amarillo** (Ej: `PED-1000000267517`).
+     - **Cliente:** Extraído del campo encerrado en el cuadro **negro** (Ej: `COMERCIAL SUPER EXCELENTE, C.A`).
+     - **Fecha de la Factura:** Extraído del campo encerrado en el cuadro **verde** (Ej: `03-07-2026`).
+     - **Código de Vendedor:** Extraído del campo encerrado en el cuadro **gris** (Ej: `BO-07001`).
+     - **Número de Bultos:** Extraído del campo encerrado en el cuadro **púrpura** (Ej: `3`).
+     - **Total de la Factura:** Extraído del campo encerrado en el cuadro **añil** (Ej: `$ 990,0000`).
+     - **Total Neto / Base:** Extraído del campo encerrado en el cuadro **gris azulado** (Ej: `$ 940,5000`).
+
+3. **Formulario de Validación Humana (Human-in-the-loop):**
+   - Una vez realizada la extracción, rellenar automáticamente un formulario web con los datos obtenidos para que el operador pueda verificarlos o corregirlos antes de guardarlos definitivamente.
+
+4. **Persistencia en Base de Datos y Asignación de Conductor:**
+   - Crear o actualizar el esquema de la base de datos para almacenar el JSON estructurado de la factura junto con la URL/referencia de la imagen adjunta.
+   - Incluir un campo desplegable en el formulario para **asignar el conductor o chofer** responsable de la remesa antes de registrarla en el sistema.
+
+Por favor, proporcióname la arquitectura sugerida, el diseño del flujo de datos y los fragmentos de código necesarios (Frontend para la captura y UI del formulario, y la lógica de backend/parsing de IA) para implementar esta solución de manera eficiente.
+
+
+
+//////////////////////////////
+18-10-2026 08:31
+
+Aquí tienes el prompt actualizado incluyendo el nuevo requerimiento para el módulo de **Cobranzas y reportes**:
+
+---
+
+### Prompt para Claude
+
+```markdown
+Actúa como un Ingeniero de Datos y Desarrollador Full-Stack Senior especialista en automatización de procesos, arquitecturas de datos y sistemas logísticos.
+
+Necesito que diseñes e implementes dos funcionalidades clave dentro de nuestra aplicación de tracking logístico:
+
+---
+
+### MÓDULO 1: Captura de Facturas y Extracción OCR en "Cargar REMESA"
+
+1. **Interfaz de Usuario (Frontend):**
+   - Añadir un botón destacado en la vista **"Cargar REMESA"** llamado **"Tomar Foto de Factura"** (que permita utilizar la cámara del dispositivo o seleccionar un archivo de imagen).
+   - Mostrar un estado de carga visual (*spinner*) con el mensaje *"Procesando factura con IA..."* mientras el sistema analiza la imagen.
+
+2. **Extracción de Datos mediante Visión / OCR (Pipeline de Datos):**
+   - Enviar la imagen capturada a un servicio de procesamiento visual (ej. API de visión / LLM) para mapear y extraer con precisión los siguientes campos basándonos en la estructura de la factura:
+     - **Número de Factura:** Extraído del campo encerrado en el cuadro **turquesa (celeste)** (Ej: `340239`).
+     - **Número de Pedido:** Extraído del campo encerrado en el cuadro **amarillo** (Ej: `PED-1000000267517`).
+     - **Cliente:** Extraído del campo encerrado en el cuadro **negro** (Ej: `COMERCIAL SUPER EXCELENTE, C.A`).
+     - **Fecha de la Factura:** Extraído del campo encerrado en el cuadro **verde** (Ej: `03-07-2026`).
+     - **Código de Vendedor:** Extraído del campo encerrado en el cuadro **gris** (Ej: `BO-07001`).
+     - **Número de Bultos:** Extraído del campo encerrado en el cuadro **púrpura** (Ej: `3`).
+     - **Total de la Factura:** Extraído del campo encerrado en el cuadro **añil** (Ej: `$ 990,0000`).
+     - **Total Neto / Base:** Extraído del campo encerrado en el cuadro **gris azulado** (Ej: `$ 940,5000`).
+
+3. **Formulario de Validación Humana (Human-in-the-loop):**
+   - Rellenar automáticamente un formulario web con los datos extraídos para que el operador pueda verificarlos o corregirlos antes de guardarlos definitivamente.
+
+4. **Persistencia en Base de Datos y Asignación de Conductor:**
+   - Crear o actualizar el esquema de la base de datos para almacenar el JSON estructurado de la factura junto con la URL/referencia de la imagen adjunta.
+   - Incluir un campo desplegable en el formulario para **asignar el conductor o chofer** responsable de la remesa antes de registrarla en el sistema.
+
+---
+
+### MÓDULO 2: Visualización en Pantalla en "Cobranzas y Reportes"
+
+1. **Nueva Opción de Visualización:**
+   - En la sección/módulo de **"Cobranzas y reportes"**, al lado del botón existente de **"Descargar Excel"**, agregar una nueva opción/botón para **"Visualizar por pantalla"**.
+   - Al seleccionar esta opción, el sistema debe renderizar el reporte dinámicamente en una tabla interactiva en la misma interfaz (con soporte para paginación, filtros por fecha/cliente/conductor y ordenamiento por columnas) Que sea con la misma información que envía al Descargar Excel.
+
+---
+
+Por favor, proporcióname la arquitectura sugerida, el esquema de datos, el flujo del pipeline de OCR y los fragmentos de código necesarios (Frontend UI y Backend API) para implementar ambas funcionalidades de manera limpia y escalable.
+
+```
+16-10-2026 08:49
+
+dame un prompt de un ingeniero de datos para darle las instrucciones a claude y decirle que modifique y ajusten varias opciones al programa que se esta desarrollando 
+
+1.-en las consultas de las facturas no mostrar el total factura/ neto y el monto lo que esta dentro del cuadro naranja a los usuarios solo los de rol Supervisor.
+2.-la fecha alm que aparece dentro del cuadro purpura que es la fecha cuando recibe el almacen que ahora sera estatus Preparada y en donde aparece Almacén (Fecha Alm) cambiar a Preparado y seguir colocando la fecha que viene en el archivo de excel del campo Fecha Alm que ahora se llamara Fecha Preparado.
+3.-Cambiar donde dice En Transito dentro de los cuadros verdes y coloca Por Entregar, Donde dice Recepción (Fecha Rec) cuadro amarillo coloca Fecha Entregado (Fecha Rec) si no hay alguna fecha disponible en ese campo coloca Por Entregar.
+4.-el estatus Cargado eliminarlo de la aplicación ya no aparecera mas ese estatus, quitar de las consultas lo que esta en los cuadros azules que son las fechas de carga al camion, y a su vez en las opciones del rol conductor quitar la opcion de Cargado y dejar solo la opcion Por Entregar que antes era Em Tránsito
+5.-Calculame los tiempos que hay entre los estatus y abajo donde dice DIAS TRANSCURRIDOS ENTRE PROCESOS en el cuadro Rojo coloca los dias de esta manera Fecha Factura entre La Fecha Preparada y colocame los dias transcurridos, entre la Fecha Preparada y la fecha de Por Entregar colocame los dias transcurridos, entre la Fecha Por Entregar y la fecha Entregada muestra los dias Transcurridos, Al final colocame Total Dias para la entrega y sumame los dias de los diferentes estatus  
+
+**************************
+
+Actúa como un Ingeniero de Datos y Desarrollador Full-Stack Senior especialista en arquitectura de software, modelado de procesos logísticos y control de acceso basado en roles (RBAC).
+
+Necesito que realices las siguientes modificaciones, refactorizaciones y ajustes lógicos en nuestro sistema de tracking logístico (referenciando la estructura visual y de datos actual):
+
+---
+
+### 1. Control de Visibilidad de Montos en Facturas (Permisos)
+* **Restricción del Cuadro Naranja ("Total factura / neto"):**
+  - Modificar las vistas de consulta de facturas para que la visualización del **Total factura / neto** y sus montos asociados (resaltados en el **cuadro naranja**) estén **ocultos** por defecto para todos los usuarios.
+  - El único rol autorizado para visualizar estos montos en las consultas debe ser exclusivamente el **Rol Supervisor** y el **Rol Cobranza**.
+
+### 2. Actualización de Nomenclatura: Almacén -> Preparado
+* **Cambio de Estatus y Campos (Cuadro Púrpura):**
+  - Renombrar el estatus y el campo de *"Almacén (Fecha Alm)"* a **"Preparado"** y **"Fecha Preparado"** respectivamente.
+  - El sistema debe seguir ingiriendo y registrando esta fecha proveniente del campo correspondiente del archivo Excel original, pero reflejándola bajo la nueva nomenclatura en la interfaz y en el historial de eventos.
+
+### 3. Actualización de Nomenclatura: En Tránsito y Recepción -> Por Entregar y Entregado
+* **Ajustes en Cuadros Verdes y Amarillos:**
+  - Donde actualmente dice **"En tránsito (Fecha Tra)"** (cuadro verde), cambiar la etiqueta a **"Por Entregar"**.
+  - Donde actualmente dice **"Recepción (Fecha Rec)"** (cuadro amarillo), cambiar la etiqueta a **"Fecha Entregado (Fecha Rec)"**. 
+  - Si no existe una fecha disponible en ese campo de recepción/entrega, el sistema debe mostrar el texto por defecto **"Por Entregar"**.
+
+### 4. Eliminación del Estatus "Cargado" y Ajustes en el Rol Conductor
+* **Depuración del Flujo Logístico:**
+  - **Eliminar por completo el estatus "Cargado"** de la aplicación (base de datos, lógica de negocio y vistas).
+  - Remover de las consultas e historiales todo rastro de las fechas de carga al camión (resaltadas en los **cuadros azules**).
+  - **Ajustes en la App / Opciones del Conductor:** En el menú y acciones disponibles para el **Rol Conductor**, retirar la opción de *"Cargado"* y dejar únicamente la opción de **"Por Entregar"** (la cual sustituye lógicamente al anterior estatus de "En Tránsito").
+
+### 5. Cálculo de Tiempos y Días Transcurridos entre Procesos
+* **Métrica de Tiempos Logísticos (Cuadro Rojo):**
+  - Implementar una sección dinámica titulada **"DIAS TRANSCURRIDOS ENTRE PROCESOS"** (ubicada en el espacio del **cuadro rojo**) que calcule y desglose matemáticamente los días transcurridos entre los hitos del flujo:
+    1. **Entre Fecha Factura y Fecha Preparada:** Calcular y mostrar los días transcurridos.
+    2. **Entre Fecha Preparada y Fecha Por Entregar:** Calcular y mostrar los días transcurridos.
+    3. **Entre Fecha Por Entregar y Fecha Entregada:** Calcular y mostrar los días transcurridos.
+  - **Total de Días:** Al final del desglose, incluir un campo de **"Total Dias para la entrega"** que realice la suma aritmética de los días transcurridos en cada uno de los diferentes estatus del proceso.
+
+---
+
+Por favor, proporciónanos las modificaciones requeridas tanto en la capa de base de datos/backend como en los componentes de interfaz (Frontend/UI) para aplicar estas reglas de manera limpia y eficiente.
+
+
+*******************
+26-10-2026    11:36
+
+dame un prompt de un ingeniero de datos para darle las instrucciones a claude y decirle que modifique y ajusten varias opciones al programa que se esta desarrollando 
+
+1.-En el historial la fecha de preparado debe ser la fecha que viene de excel o cuando se le tome la foto a la factura, la fecha de carga de la remesa no se debe usar mas.
+2.-Cuando el estatus es Devolución en Fecha Entregado (Fecha Rec) colocar lo mismo No entregada devolución mas la fecha de devolución.
+3.-En los días transcurridos si el estatus es Devolución colocar como aparece No se entrego Devolución y hacer los calculos de días y horas entre la fecha de por entregar y la fecha de devolución.
+4.-El valor de los días coloca Tambien las horas y minutos entre el rango de fechas si el dia es igual no colocar 0 dias  sino las horas o minutos que generen y no colocar los fines de semana en las sumatorias.
+5.-En la Consulta inicial que aparece sin entrar al sistema  de ¿Donde esta mi pedido? debe aparecer Tambien lo que se agrego nuevo para las facturas de los dias transcurridos.
+6.-En la opción Cobranzas y Reportes colocame una nueva opción de reporte que pueda seleccionar entre un rango de fechas, los diferentes estatus de la factura pueda seleccionar, filtrarlo por clientes, Tambien por vendedor, por zonas, por empresas de transporte y me muestre por pantalla y pueda imprimir o descargar a excel un archivo parecido al de cobranzas pero que me agregue los dias horas y minutos transcurridos entre procesos pero con la sumatoria de dias no colocar fines de semana como habiles para esa suma, el reporte debe estar abajo de Avisar a vendedores y se llamara Indicador de Gestion
+
+-------------
+
+Actúa como un Ingeniero de Datos y Desarrollador Full-Stack Senior especialista en automatización de procesos logísticos, motores de cálculo de tiempos (SLAs) y generación de reportes empresariales.
+
+Necesito que realices los siguientes ajustes, refactorizaciones de lógica de negocio y adiciones en nuestro sistema de tracking logístico:
+
+---
+
+### 1. Gestión de Fechas en el Historial (Supresión de Carga)
+* **Origen de la Fecha de Preparado:**
+  - En el historial de la factura, la fecha correspondiente a **"Preparado"** debe registrarse tomando obligatoriamente la fecha proveniente del archivo Excel cargado o, en su defecto, la fecha y hora exacta en la que se le tome la fotografía a la factura mediante el módulo de captura.
+* **Eliminación de la Fecha de Carga:**
+  - La fecha y el evento de "Carga al camión" quedan completamente obsoletos y deben eliminarse del flujo y del historial.
+
+### 2. Formato de Fecha/Estatus en Devoluciones
+* **Etiquetado en "Fecha Entregado (Fecha Rec)":**
+  - Cuando el estatus de la factura sea **"Devolución"**, en el campo correspondiente a la fecha de entrega debe mostrarse explícitamente el texto: `"No entregada devolución"` seguido de la fecha exacta en la que se registró la devolución (Ej: *No entregada devolución - 24/10/2026 08:41 a. m*).
+
+### 3. Ajuste de Días Transcurridos en Casos de Devolución
+* **Cálculo Especial por Devolución:**
+  - Si el estatus de la factura es **"Devolución"**, en la sección de días transcurridos debe mostrarse el mensaje `"No se entrego - Devolución"`.
+  - Asimismo, el motor de cálculo de tiempo debe realizar exclusivamente el cálculo de días y horas transcurridas comprendidas **entre la fecha de "Por Entregar" y la fecha en que se registró la "Devolución"**.
+
+### 4. Precisión de Tiempos (Días, Horas, Minutos sin Fines de Semana)
+* **Granularidad de Tiempos:**
+  - En el cálculo de los días transcurridos entre procesos, si la diferencia ocurre en el mismo día (el día es igual), **no debe mostrarse "0 días"**, sino reflejar de manera precisa **las horas y minutos** generados en ese intervalo.
+* **Exclusión de Fines de Semana:**
+  - Todas las sumatorias y cálculos de tiempo entre procesos **deben excluir estrictamente los fines de semana (sábados y domingos)**, considerándolos días inhábiles para el conteo efectivo.
+
+### 5. Consulta Pública de Pedidos ("¿Dónde está mi pedido?")
+* **Actualización del Portal Externo:**
+  - La interfaz de consulta pública inicial (la vista a la que accede el cliente o el vendedor sin iniciar sesión) debe actualizarse para mostrar también el desglose de los **días y horas transcurridas entre procesos**, manteniendo la misma coherencia visual del panel interno.
+
+### 6. Nuevo Módulo de Reportes: "Indicador de Gestión"
+* **Ubicación y Nombre del Menú:**
+  - Dentro de la sección de **"Cobranzas y Reportes"**, ubicar un nuevo reporte situado exactamente **debajo de la opción "Avisar a vendedores"**, el cual llevará por nombre **"Indicador de Gestión"**.
+* **Filtros de Búsqueda:**
+  - El usuario que tenga acceso al modulo de Cobranzas y reportes podrá filtrar la información mediante:
+    1. Rango de fechas.
+    2. Selección múltiple o específica de estatus de la factura.
+    3. Cliente.
+    4. Vendedor.
+    5. Zonas.
+    6. Empresas de transporte.
+* **Salida de Datos y Formato:**
+  - El reporte debe renderizarse **por pantalla** en una tabla interactiva, permitiendo al usuario **imprimir** o **descargar a Excel**.
+  - La estructura del archivo debe ser similar a la vista de cobranzas, pero agregando obligatoriamente las columnas de **días, horas y minutos transcurridos entre procesos**, aplicando la regla de negocio de **excluir los fines de semana** en las sumatorias totales.
+
+---
+
+Por favor, proporciónanos la implementación técnica (backend, lógica de cálculo de tiempo hábil excluyendo fines de semana, y componentes de frontend) necesaria para incorporar estas mejoras de manera robusta.
+
+
+**************************************
+
+28-10-2026    08:15
+
+dame un prompt de un ingeniero de datos para darle las instrucciones a claude y decirle que modifique y ajusten varias opciones al programa que se esta desarrollando 
+
+1.-En indicador de gestion del modulo de cobranzas y reportes cuando se le de a la opcion de Visualizar por pantalla muestre es graficamente como la imagen donde el titulo del grafico sera Indicador de Gestion donde esta el cuadro rojo de la imagen.
+2.-En los cuadros verdes iran los nombres de las empresas de transporte y en las barras muestre los valores y porcentajes dando el color negro como la cantidad de factura en ese estatus y el amarillo sera el porcentaje para ese estatus, a su vez la barra debe ir cambiando de tamaño dependiendo de los valores de cada filtro. En la opcion imprimir imprimira ese grafico.
+3.-Al seleccionar o darle clic a el cuadro ya sea el azul de preparado, el naranja por entregar o el gris entregado despliege un nuevo grafico como la imagen 2 donde los colores representen las empresas ya sea IMPORTADORA USY, CORPORACION FERMETAL, CORPORACION DIJONAS y en la misma me coloque la cantidad de facturas de esa empresa en ese estatus junto con su porcentaje.
+4.-En la opcion de Descargar a excel de ese indicador de gestion solo me genere el archivo con los datos: Factura, Cliente, Estatus, fecha de factura, fecha ultimo estatus, El tiempo entre Facturado a preparado, el tiempo entre preparado a por entregar, el tiempo de por entregar a entregado o devolucion, observacion, el cod. vendedor, zona, chofer, empresa de transporte
+
+
+---------------------------
+28-10-2026    10:56
+
+Actúa como un Ingeniero de Datos y Desarrollador Full-Stack Senior especialista en visualización de datos avanzados, arquitectura frontend y motores de reportes logísticos.
+
+Necesito que implementes las siguientes modificaciones y componentes gráficos interactivos en el módulo de **Cobranzas y Reportes**, específicamente para la sección de **"Indicador de Gestión"**:
+
+---
+
+### 1. Visualización Gráfica Principal (Imagen 1)
+* **Renderizado de Gráfica de Barras:**
+  - Al hacer clic en la opción **"Visualizar por pantalla"** dentro de *Indicador de Gestión*, el sistema debe renderizar un gráfico de barras agrupadas/apiladas interactivo (similar a la estructura de la **Imagen 1**).
+  - **Título del Gráfico:** El título principal ubicado en la parte superior (equivalente al recuadro rojo de la referencia) debe nombrarse estrictamente **"Indicador de Gestión"**.
+  - **Eje X (Empresas de Transporte):** En los espacios inferiores (resaltados en **cuadros verdes**), se deben mostrar dinámicamente los nombres de las diferentes empresas de transporte (ej. *Yaneiber, Sergama, Silva, ClienteRetira, o las que estén creadas y tengan información*).
+  - **Etiquetas de Datos en las Barras:** Sobre o dentro de cada barra, mostrar los valores numéricos absolutos (cantidad de facturas) y su respectivo porcentaje. Siguiendo la convención visual solicitada:
+    - Color **negro** para representar la cantidad de facturas en ese estatus, como aparece en la imagen 1.
+    - Color **amarillo** para representar el porcentaje correspondiente a dicho estatus, como aparece en la imagen 1.
+  - **Comportamiento Dinámico:** Las alturas y tamaños de las barras deben ajustarse de manera fluida y responsiva dependiendo de los filtros aplicados (fechas, estatus, cliente, vendedor, zona).
+  - **Función de Impresión:** La opción de imprimir de la interfaz debe capturar y formatear correctamente este gráfico para una salida limpia en papel o PDF.
+
+### 2. Interactividad por Clics y Gráfico de Desglose (Imagen 2)
+* **Drill-Down / Gráfico Circular o de Anillo:**
+  - Al hacer clic en cualquiera de las leyendas o barras de estatus principales de la gráfica de barras —específicamente el **azul** (Preparado), el **naranja** (Por Entregar) o el **gris** (Entregado)—, el sistema debe desplegar un gráfico secundario interactivo (tipo dona o gráfico circular 3D/moderno similar a la **Imagen 2**).
+  - **Segmentación por Empresas:** Los sectores o divisiones de este gráfico secundario deben representar a las empresas emisoras/involucradas (ej. *IMPORTADORA USY, CORPORACION FERMETAL, CORPORACION DIJONAS*).
+  - Cada sector debe mostrar claramente la cantidad exacta de facturas de esa empresa en ese estatus específico junto con su respectivo porcentaje.
+
+### 3. Estructura del Reporte "Descargar a Excel"
+* **Exportación de Datos Limpios:**
+  - Al presionar la opción de **"Descargar a excel"** en el *Indicador de Gestión*, el sistema debe generar un archivo tabular (`.xlsx`) que contenga **exclusivamente** los siguientes campos y en este orden exacto:
+    1. **Factura**
+    2. **Cliente**
+    3. **Estatus**
+    4. **Fecha de factura**
+    5. **Fecha último estatus**
+    6. **El tiempo entre Facturado a preparado**
+    7. **El tiempo entre preparado a por entregar**
+    8. **El tiempo de por entregar a entregado o devolución**
+    9. **Observación**
+    10. **Cod. Vendedor**
+    11. **Zona**
+    12. **Chofer**
+    13. **Empresa de transporte**
+
+---
+
+Por favor, proporcióname la arquitectura de componentes de frontend (utilizando librerías de gráficos estándar como Chart.js, Recharts o ApexCharts) junto con la lógica de procesamiento en backend para estructurar los datos y los endpoints de exportación a Excel necesarios.
+
+**********************
+Las de Devolución sumalas a las de entregada
+ajustame las sumatorias de dias ya que los dias corresponden a 9 horas diarias de trabajo que corresponden desde las 7 am hasta las 4 pm. Ajustame los reportes y todo donde se muestren los dias transcurridos entre procesos
+
+
+**************
+
+1.-en el desglose de las facturas que muestra por pantalla colocame solo la información con los datos: Factura, Cliente, Estatus, fecha de factura, fecha ultimo estatus, El tiempo entre Facturado a preparado, el tiempo entre preparado a por entregar, el tiempo de por entregar a entregado o devolucion, observacion, el cod. vendedor, zona, chofer, empresa de transporte
+
+2.-cuando le de clic en el primer grafico es lo que me va a mostrar en el desglose
+
+3.-agregame los días feriados y no los sume como hábil
+
+4.-en DIAS TRANSCURRIDOS ENTRE PROCESOS, donde aparece Días hábiles quitale la palabra que dice **9h** solo deja **Días hábiles: de lunes a viernes de 7:00 a 16:00**
+
+5.-cuando haga cambios en los filtros que se actualice la información al instante en los graficos y que no sea necesario volver a darle clic en visualizar por pantalla
+
+
+
+*************************
+29-10-2026   10:06
+
+dame un prompt de un ingeniero de datos para darle las instrucciones a claude y decirle que modifique y ajusten varias opciones al programa que se esta desarrollando 
+
+copia todas las tablas inicializadas sin ninguna carga de remesas ni facturas, ni conductores, solo dejaras los vendedores que existan y usuarios de Rol Conductor lo eliminaras, Tambien deja las empresas y la copias en C:\Desarrollo\Tracking - Octubre\inicializar toda la información requerida para inicializar las tablas en cero y dejarme un archivo ejecutable que automaticamente realice los cambios o inicialice las tablas y la deje sin informacion
+
+
+************************
+Actúa como un Ingeniero de Datos y Desarrollador Full-Stack Senior especialista en administración de bases de datos, migraciones y scripting de automatización en entornos de producción y desarrollo.
+
+Necesito que desarrolles un script de inicialización y limpieza de la base de datos para nuestro sistema de tracking logístico, cumpliendo estrictamente con las siguientes reglas de negocio para el reseteo:
+
+---
+
+### 1. Reglas de Limpieza y Preservación de Tablas
+* **Remesas y Facturas:** 
+  - Vaciar/eliminar por completo todos los registros de remesas y facturas existentes. Las tablas deben quedar completamente inicializadas en cero (sin datos transaccionales).
+* **Conductores:** 
+  - Eliminar todos los registros correspondientes a usuarios con **Rol Conductor**.
+* **Vendedores:** 
+  - **Preservar** intactos todos los registros de los vendedores que existan actualmente en el sistema (no borrarlos).
+* **Empresas:** 
+  - **Preservar** intactas todas las empresas registradas (no borrarlas).
+
+### 2. Generación del Script y Archivo Ejecutable de Inicialización
+* **Ubicación y Estructura:**
+  - Crear el script o conjunto de scripts SQL/Python necesarios para ejecutar esta limpieza selectiva.
+  - El resultado empaquetado o script principal debe ubicarse y configurarse para guardarse en la ruta local: `C:\Desarrollo\Tracking - Octubre\`.
+* **Automatización (Ejecutable):**
+  - Generar un archivo ejecutable (por ejemplo, un script `.bat`, un script de PowerShell o un ejecutable compilado en Python/Node.js) que se encargue de automatizar todo el proceso: conectarse a la base de datos, ejecutar las sentencias de limpieza condicional (respetando vendedores y empresas, y purgando remesas y conductores) y dejar las tablas listas y en cero de manera desatendida.
+
+---
+
+Por favor, proporcióname el código del script de migración/limpieza, la lógica de validación para conservar solo los datos permitidos, y las instrucciones claras para compilar o generar el archivo ejecutable en la ruta especificada.
+
+
+
+***************************
+
+*********************
+29-10-2026 13:44
+
+dame un prompt de un ingeniero de datos para darle las instrucciones a claude y decirle que modifique y ajusten varias opciones al programa que se esta desarrollando 
+
+1.-en cargar remesas en la hoja REMESA (Excel) adicionar un rango de fechas desde - hasta correspondiente a Fecha Fac del documento de excel y al darle Analizar que muestre o se puedan seleccionar y cargar solo las facturas que cumplan ese rango y me lo muestre el análisis.
+
+
+
+*********
+Actúa como un Ingeniero de Datos y Desarrollador Full-Stack Senior especialista en procesamiento de archivos Excel, tuberías de ingesta de datos (ETL) y diseño de interfaces de usuario para sistemas logísticos.
+
+Necesito que realices una modificación importante en el módulo de **Cargar Remesa** (específicamente en la sección de procesamiento de la hoja Excel llamada `REMOTA` / `REMSA`), integrando un sistema de filtrado previo por rango de fechas.
+
+---
+
+### Requerimientos Funcionales y Técnicos:
+
+1. **Filtro de Rango de Fechas en UI:**
+   - En la interfaz de la opción **Cargar Remesa**, justo antes de procesar el archivo Excel, agregar dos campos de selección de fecha: **"Desde"** y **"Hasta"**.
+   - Estos campos deben corresponder y evaluar directamente el campo **Fecha Fac** (Fecha de Factura) de los documentos contenidos en el archivo de Excel.
+
+2. **Lógica de Filtrado en el Pipeline de Ingesta (Backend/Parser):**
+   - Al hacer clic en el botón **"Analizar"**, el sistema debe leer el archivo Excel, pero aplicar un filtro estricto donde **solo procese, seleccione y cargue aquellas facturas cuya "Fecha Fac" se encuentre estrictamente dentro del rango [Desde - Hasta]** especificado por el usuario.
+   - Las facturas que queden fuera de ese rango deben ser ignoradas para esta carga específica.
+
+3. **Visualización del Análisis Filtrado:**
+   - Una vez finalizado el análisis, la interfaz debe mostrar un resumen claro y detallado únicamente con el subconjunto de facturas que cumplieron con el rango de fechas seleccionado, permitiendo al operador validarlas antes de confirmar la inserción definitiva en la base de datos.
+   - El procedimiento que se hace antes de este nuevo filtro debe seguir funcionando de la misma manera.
+---
+
+Por favor, proporciónanos la implementación del código (tanto en la lógica de procesamiento y filtrado del archivo Excel en backend/script como en los componentes de la interfaz de usuario en frontend) para integrar esta mejora de forma limpia, eficiente y no cambie la lógica del análisis.
+
+
+
+****************************
+30-10-2026 15:00
+
+dame un prompt de un ingeniero de datos para darle las instrucciones a claude y decirle que modifique y ajusten las opciones al programa que se esta desarrollando
+
+En las facturas a solo el rol Supervisor permitir cambiarle la empresa de transporte a una factura o en Remesas muestrame la empresa de transporte a la que pertenece y permitir modificar esa empresa y la modifique a todas las facturas a la que estan asignadas
+
+
+**********
+Actúa como un Ingeniero de Datos y Desarrollador Full-Stack Senior especialista en arquitectura backend, control de acceso basado en roles (RBAC) y operaciones masivas en bases de datos relacionales.
+
+Necesito que realices las siguientes modificaciones y ajustes lógicos en nuestro sistema de tracking logístico:
+
+---
+
+### 1. Restricción de Permisos para Modificar la Empresa de Transporte
+* **Control de Acceso (Rol Supervisor):**
+  - La opción para modificar o reasignar la **Empresa de Transporte** de una factura o remesa debe estar restringida exclusivamente a los usuarios con **Rol Supervisor**. 
+  - Los demás roles (como Transportista o Conductor) solo tendrán permisos de lectura o no visualizarán el botón de edición de este campo.
+
+### 2. Visualización y Edición en el Módulo de Remesas / Facturas
+* **Visualización:**
+  - En las vistas de consulta de facturas y remesas, mostrar claramente el nombre de la **Empresa de Transporte** a la que pertenece cada registro.
+* **Modificación en Cascada (Actualización Global):**
+  - Al editar o cambiar la empresa de transporte desde una remesa o factura (bajo el rol Supervisor), el sistema debe ejecutar una **actualización masiva en cascada (`UPDATE`) en la base de datos**.
+  - Esto significa que al modificar la empresa de transporte en dicha vista, el cambio debe aplicarse **automáticamente a todas las facturas** que se encuentren asociadas o agrupadas bajo esa misma remesa/código.
+
+---
+
+Por favor, proporciónanos la implementación del backend (endpoints de actualización en cascada y validación estricta de middleware RBAC para el rol Supervisor) y los componentes de la interfaz de usuario (Frontend) necesarios para aplicar esta mejora de forma segura y consistente.
+

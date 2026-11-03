@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b5cad">
+  <title>Tracking Logístico</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main class="wrap narrow">
+    <div class="row" style="margin:24px 0 16px">
+      <img src="/static/icons/logo.png" alt="Fermetal" class="logo-app" width="120" height="72">
+      <div>
+        <h1 style="margin:0">Tracking Logístico</h1>
+        <small>Seguimiento de facturas de Transporte</small>
+      </div>
+    </div>
+
+    <form id="login" class="card stack" autocomplete="on">
+      <div id="bioBox" class="stack hidden">
+        <button class="primary" type="button" id="btnBio">Entrar con huella</button>
+        <small class="muted" id="bioQuien"></small>
+        <div id="errBio" class="alert err hidden" role="alert"></div>
+        <small class="muted">O entre con su usuario y clave. <a href="#" id="bioOlvidar">No mostrar la huella en este teléfono</a></small>
+      </div>
+      <div>
+        <label for="u">Usuario o cédula</label>
+        <input id="u" name="username" autocomplete="username" inputmode="text" required autofocus>
+      </div>
+      <div>
+        <label for="p">Clave</label>
+        <input id="p" name="password" type="password" autocomplete="current-password" required>
+      </div>
+      <div id="err" class="alert err hidden" role="alert"></div>
+      <button class="primary" type="submit" id="btn">Entrar</button>
+    </form>
+
+    <div id="avisoTemp" class="card stack hidden" role="alert">
+      <h2 style="margin-top:0">Está usando una clave temporal</h2>
+      <div class="alert warn" id="avisoTempTxt"></div>
+      <p class="muted" style="margin:0">Por seguridad, cree ahora su clave personal.</p>
+      <div class="row">
+        <button class="primary" type="button" id="avisoCambiar">Cambiar mi clave ahora</button>
+        <button type="button" id="avisoSeguir">Continuar</button>
+      </div>
+    </div>
+
+    <div id="ofrecerBio" class="card stack hidden" role="dialog" aria-labelledby="ofrecerBioTit">
+      <h2 style="margin-top:0" id="ofrecerBioTit">¿Entrar con su huella la próxima vez?</h2>
+      <p class="muted" style="margin:0">Así no tendrá que escribir su clave en este teléfono. La huella (o el rostro) no sale del teléfono: el sistema nunca la recibe.</p>
+      <div id="errOfrecer" class="alert err hidden" role="alert"></div>
+      <div class="row">
+        <button class="primary" type="button" id="bioActivar">Activar huella</button>
+        <button type="button" id="bioAhoraNo">Ahora no</button>
+      </div>
+    </div>
+
+    <form id="cambio" class="card stack hidden">
+      <h2 style="margin-top:0">Cree su clave personal</h2>
+      <p class="muted" style="margin:0" id="cambioTxt">Su clave actual es temporal. Escriba una nueva (mínimo 6 caracteres).</p>
+      <div>
+        <label for="n1">Clave nueva</label>
+        <input id="n1" type="password" autocomplete="new-password" minlength="6" required>
+      </div>
+      <div>
+        <label for="n2">Repita la clave</label>
+        <input id="n2" type="password" autocomplete="new-password" minlength="6" required>
+      </div>
+      <div id="err2" class="alert err hidden" role="alert"></div>
+      <div class="row"><button class="primary" type="submit">Guardar y continuar</button>
+        <button type="button" id="cambioLuego" class="hidden">Ahora no</button></div>
+    </form>
+
+    <p class="card" style="margin-top:16px">
+      ¿Es vendedor? <a href="/tracking">Consulte el estatus de una factura sin clave</a>.
+    </p>
+    <footer class="creditos">
+      <div>Creado por <strong>Geison Villegas</strong> · <a href="mailto:vgeison@gmail.com">vgeison@gmail.com</a> · Para <strong>Fermetal</strong></div>
+      <div class="version-app"><span data-version>Versión</span> · <span data-fecha-creacion>Octubre 2026</span></div>
+    </footer>
+  </main>
+  <script src="/static/common.js"></script>
+  <script src="/static/biometria.js"></script>
+  <script src="/static/login.js"></script>
+</body>
+</html>

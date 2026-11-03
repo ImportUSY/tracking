@@ -1,0 +1,81 @@
+# Despliegue completo: PostgreSQL + app + HTTPS (Caddy) + respaldo diario automático.
+#   1) cp .env.example .env   (y complete SECRET_KEY, POSTGRES_PASSWORD, DOMAIN...)
+#   2) docker compose up -d --build
+#   3) docker compose exec app tracking crear-supervisor
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tracking
+      POSTGRES_USER: tracking
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD en .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tracking -d tracking"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://tracking:${POSTGRES_PASSWORD}@db:5432/tracking
+      STORAGE_DIR: /data/fotos
+    volumes:
+      - fotos:/data/fotos
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+  # Respaldo diario: base de datos (pg_dump, con retención) + copia incremental de las fotos.
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - ./backups:/backups
+      - fotos:/fotos:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          f=/backups/tracking_$$(date +%Y%m%d_%H%M).dump
+          pg_dump -h db -U tracking -d tracking -Fc -f "$$f" && echo "respaldo $$f"
+          find /backups -name 'tracking_*.dump' -mtime +$$RETENTION_DAYS -delete
+          mkdir -p /backups/fotos && cp -a -n /fotos/. /backups/fotos/   # las fotos no cambian: copia incremental
+          sleep 86400
+        done
+
+volumes:
+  pgdata:
+  fotos:
+  caddy_data:
+  caddy_config:

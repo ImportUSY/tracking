@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b5cad">
+  <title>Consulta de tracking</title>
+  <link rel="icon" href="/static/icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main class="wrap" style="max-width:720px">
+    <div class="row" style="margin:20px 0 12px">
+      <img src="/static/icons/logo.png" alt="Fermetal" class="logo-app" width="100" height="60">
+      <div>
+        <h1 style="margin:0">¿Dónde está mi pedido?</h1>
+        <small>Escriba el número de factura, de pedido o de tracking</small>
+      </div>
+    </div>
+    <form id="f" class="card row" role="search">
+      <input id="q" class="grow" style="flex:1 1 220px" placeholder="Ej.: FAC-U00099434, PED-U000000106542 o TR-…"
+             minlength="3" maxlength="40" required autocomplete="off" aria-label="Número a consultar">
+      <button class="primary" type="submit">Consultar</button>
+    </form>
+    <div id="out" class="stack" style="margin-top:16px" aria-live="polite"></div>
+    <p class="muted" style="margin-top:24px"><a href="/">Acceso para Transporte y conductores</a></p>
+    <footer class="creditos">
+      <div>Creado por <strong>Geison Villegas</strong> · <a href="mailto:vgeison@gmail.com">vgeison@gmail.com</a> · Para <strong>Fermetal</strong></div>
+      <div class="version-app"><span data-version>Versión</span> · <span data-fecha-creacion>Octubre 2026</span></div>
+    </footer>
+  </main>
+  <script src="/static/common.js"></script>
+  <script src="/static/tracking.js"></script>
+</body>
+</html>

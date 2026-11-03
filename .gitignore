@@ -1,0 +1,29 @@
+# --- Secretos: NUNCA a GitHub (respaldarlos aparte) ---
+# Llave de firma del APK: con ella se publican actualizaciones en Google Play
+**/LLAVE_DE_FIRMA_no_compartir/
+*.keystore
+*.jks
+signing-key-info.txt
+# Paquete de PWABuilder: trae la llave de firma adentro
+APK/*.zip
+# Claves de la base de producción (Neon), SECRET_KEY, etc. La plantilla .env.example sí se sube.
+.env
+.env.*
+!.env.example
+
+# --- Datos locales y archivos generados ---
+tracking-logistico/data/
+tracking-logistico/backups/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.vercel/
+*.egg-info/
+
+# --- Sistema ---
+Thumbs.db
+desktop.ini
+~$*

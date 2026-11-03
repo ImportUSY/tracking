@@ -1,0 +1,311 @@
+"use strict";
+(() => {
+  const { $, $$, esc, badge, ORDEN, toast, uuid, api } = TL;
+  TL.registerSW();
+
+  const me = TL.user();
+  if (!TL.token() || !me || me.rol !== "conductor" || me.cambio_clave_obligatorio) { location.replace("/"); return; }
+
+  let maxFotoMb = 4;
+  fetch("/api/config").then((r) => r.json()).then((c) => { maxFotoMb = c.max_foto_mb || 4; }).catch(() => {});
+  const state = { facturas: [], pendientes: [], rechazados: [], filtro: "abiertas", q: "", sel: new Set(), servidorAt: null };
+  $("#nombre").textContent = me.nombre;
+  // Clave temporal: aviso con los accesos que le quedan; el botón abre «Mis datos» para cambiarla
+  if (me.debe_cambiar_clave) {
+    $("#main").insertAdjacentHTML("afterbegin", TL.avisoClaveTemporal(me));
+    $("#avisoClaveBtn").onclick = () => { $("#btnMenu").click(); setTimeout(() => $("#pC1").focus(), 300); };
+  }
+
+  TL.setUnauthorizedHandler(() => {
+    const a = $("#aviso");
+    a.innerHTML = 'Su sesión venció. Sus cambios pendientes siguen guardados en el teléfono. ' +
+      '<button type="button" class="small primary" id="reLogin">Iniciar sesión</button>';
+    a.classList.remove("hidden");
+    $("#reLogin").onclick = () => { TL.setSession(null, me); location.href = "/"; };
+  });
+
+  // ------------------------------------------------------------------ datos
+  async function loadLocal() {
+    const cache = await Outbox.loadFacturas(me.id);
+    state.facturas = cache.facturas || [];
+    state.servidorAt = cache.servidorAt;
+    state.pendientes = await Outbox.pending(me.id);
+    state.rechazados = await Outbox.rechazados(me.id);
+  }
+
+  function merged() {
+    const porFactura = new Map();
+    for (const ev of state.pendientes) {
+      if (!porFactura.has(ev.factura_id)) porFactura.set(ev.factura_id, []);
+      porFactura.get(ev.factura_id).push(ev);
+    }
+    return state.facturas.map((f) => {
+      const evs = porFactura.get(f.id) || [];
+      let estatus = f.estatus;
+      for (const ev of evs) {
+        const finales = ORDEN[estatus] === 3 && ORDEN[ev.estatus] === 3;
+        if (ORDEN[ev.estatus] > ORDEN[estatus] || finales) estatus = ev.estatus;
+      }
+      return Object.assign({}, f, { estatusVista: estatus, pendiente: evs.length > 0 });
+    });
+  }
+
+  // ------------------------------------------------------------------ render
+  function render() {
+    const lista = merged();
+    const esFinal = (f) => ORDEN[f.estatusVista] === 3;
+    const abiertas = lista.filter((f) => !esFinal(f));
+    const cerradas = lista.filter(esFinal);
+    $("#cAb").textContent = `(${abiertas.length})`;
+    $("#cCe").textContent = `(${cerradas.length})`;
+
+    const q = state.q.toLowerCase();
+    let ver = state.filtro === "abiertas" ? abiertas : cerradas;
+    if (q) {
+      ver = ver.filter((f) => [f.numero, f.cliente, f.pedido, f.tracking].some((v) => (v || "").toLowerCase().includes(q)));
+    }
+    // limpiar selección de facturas que ya no están visibles/abiertas
+    for (const id of [...state.sel]) if (!abiertas.some((f) => f.id === id)) state.sel.delete(id);
+
+    const grupos = new Map();
+    for (const f of ver) {
+      const k = f.remesa_numero;
+      if (!grupos.has(k)) grupos.set(k, { destino: f.destino, empresa: f.empresa, items: [] });
+      grupos.get(k).items.push(f);
+    }
+
+    const cont = $("#lista");
+    if (!ver.length) {
+      cont.innerHTML = `<div class="card muted">${state.facturas.length ? "No hay facturas en esta vista." :
+        (navigator.onLine ? "No tiene facturas asignadas." : "Sin conexión y sin datos guardados todavía.")}</div>`;
+    } else {
+      cont.innerHTML = [...grupos.entries()].map(([num, g]) => {
+        const seleccionables = g.items.filter((f) => ORDEN[f.estatusVista] < 2);
+        return `
+        <section class="card" style="margin-bottom:12px">
+          <div class="row between">
+            <div><strong>Remesa ${esc(num)}</strong><br><small>${esc(g.destino || "")} · ${esc(g.empresa || "")}</small></div>
+            ${state.filtro === "abiertas" && seleccionables.length ?
+              `<button type="button" class="small" data-selall="${esc(num)}">Seleccionar todas</button>` : ""}
+          </div>
+          <div style="margin-top:10px">${g.items.map(itemHtml).join("")}</div>
+        </section>`;
+      }).join("");
+    }
+    renderBar();
+    renderRechazados();
+    renderSyncCount();
+  }
+
+  function itemHtml(f) {
+    const abierta = ORDEN[f.estatusVista] < 3;
+    const seleccionable = ORDEN[f.estatusVista] < 2;
+    return `
+      <div class="fact ${f.pendiente ? "pending" : ""}">
+        <div>${abierta && seleccionable ? `<input type="checkbox" data-sel="${f.id}" aria-label="Seleccionar ${esc(f.numero)}" ${state.sel.has(f.id) ? "checked" : ""}>` : ""}</div>
+        <div>
+          <div class="row between"><strong class="mono">${esc(f.numero)}</strong>${badge(f.estatusVista)}</div>
+          <div>${esc(f.cliente || "")}</div>
+          <small>Pedido ${esc(f.pedido || "-")} · Bultos ${esc(f.bultos ?? "-")}${f.tracking ? ` · <span class="mono">${esc(f.tracking)}</span>` : ""}</small>
+          ${f.comentario ? `<div><small>${esc(f.comentario)}</small></div>` : ""}
+          ${f.observacion_entrega ? `<div><small><strong>Observación:</strong> ${esc(f.observacion_entrega)}</small></div>` : ""}
+          ${f.pendiente ? `<div><small class="lvl-advertencia">Pendiente por subir</small></div>` : ""}
+        </div>
+        ${abierta ? `<div class="acts">
+          <button type="button" class="ok" data-cerrar="entregada" data-id="${f.id}">Entregada</button>
+          <button type="button" class="danger" data-cerrar="devolucion" data-id="${f.id}">Devolución</button>
+        </div>` : ""}
+      </div>`;
+  }
+
+  function renderBar() {
+    const bar = $("#bar");
+    bar.classList.toggle("hidden", state.sel.size === 0);
+    $("#selTxt").textContent = `${state.sel.size} sel.`;
+  }
+
+  function renderRechazados() {
+    const box = $("#rech");
+    if (!state.rechazados.length) { box.classList.add("hidden"); return; }
+    box.classList.remove("hidden");
+    box.innerHTML = `<div class="alert err stack">
+      <strong>Cambios que el sistema no aceptó</strong>
+      ${state.rechazados.map((r) => `<div class="row between"><span><span class="mono">${esc(r.numero || r.factura_id)}</span> → ${esc(TL.ESTATUS[r.estatus])}: ${esc(r.error)}</span>
+      <button type="button" class="small" data-okrech="${esc(r.id)}">Entendido</button></div>`).join("")}
+    </div>`;
+  }
+
+  function renderSyncCount() {
+    const n = state.pendientes.length;
+    if (!navigator.onLine) setSync(false, `Sin señal · ${n} pendiente(s) guardado(s) en el teléfono`);
+    else if (n) setSync(true, `${n} cambio(s) por subir`);
+  }
+  function setSync(online, txt) {
+    $("#dot").classList.toggle("off", !online);
+    $("#syncTxt").textContent = txt;
+  }
+
+  // ------------------------------------------------------------------ acciones
+  async function encolar(facturaId, estatus, extra = {}) {
+    const f = state.facturas.find((x) => x.id === facturaId);
+    await Outbox.enqueue(me.id, Object.assign({
+      id: uuid(), factura_id: facturaId, numero: f ? f.numero : null, estatus, ocurrido_at: new Date().toISOString(),
+    }, extra));
+  }
+
+  async function lote(estatus) {
+    const lista = merged();
+    let n = 0;
+    for (const id of state.sel) {
+      const f = lista.find((x) => x.id === id);
+      if (f && ORDEN[f.estatusVista] < ORDEN[estatus]) { await encolar(id, estatus); n++; }
+    }
+    state.sel.clear();
+    await refreshLocal();
+    toast(`${n} factura(s) marcadas como ${TL.ESTATUS[estatus]}`);
+    Sync.run();
+  }
+
+  let cierre = null;
+  function abrirCierre(id, tipo) {
+    const f = merged().find((x) => x.id === id);
+    if (!f) return;
+    cierre = { id, tipo, numero: f.numero };
+    const dev = tipo === "devolucion";
+    $("#cierreTitulo").textContent = dev ? "Registrar devolución" : "Registrar entrega";
+    $("#cierreInfo").textContent = `${f.numero} · ${f.cliente || ""}`;
+    $("#fotoLabel").textContent = dev ? "Foto de la factura con el motivo (obligatoria)" : "¿Desea tomar foto de la factura firmada? (opcional)";
+    $("#fotoAyuda").textContent = dev ? "Escriba el motivo en la factura antes de tomar la foto." : "Puede confirmar sin foto.";
+    // Entregada: observación/notificación de la entrega (quién recibió, faltantes…). Devolución: motivo.
+    $("#motivoLabel").textContent = dev ? "Motivo (opcional, también puede escribirlo en la factura)"
+      : "Observación de la entrega (opcional): quién recibió, faltantes, novedades…";
+    $("#motivo").placeholder = dev ? "" : "Ej.: Recibido por Juan Pérez, conforme";
+    $("#foto").value = ""; $("#motivo").value = "";
+    $("#prev").classList.add("hidden");
+    $("#cierreErr").classList.add("hidden");
+    $("#cierreOk").className = dev ? "danger" : "ok";
+    $("#cierreOk").textContent = dev ? "Confirmar devolución" : "Confirmar entrega";
+    $("#dlgCierre").showModal();
+  }
+
+  const comprimir = (file) => TL.comprimirImagen(file, 1600, 0.72);
+
+  async function confirmarCierre(ev) {
+    ev.preventDefault();
+    const file = $("#foto").files[0];
+    const err = $("#cierreErr");
+    if (cierre.tipo === "devolucion" && !file) {
+      err.textContent = "La devolución requiere la foto de la factura."; err.classList.remove("hidden"); return;
+    }
+    $("#cierreOk").disabled = true;
+    try {
+      let fotoId = null;
+      if (file) {
+        const blob = await comprimir(file);
+        if (blob.size > maxFotoMb * 1024 * 1024) throw new Error(`La foto supera ${maxFotoMb} MB`);
+        fotoId = uuid();
+        await Outbox.saveFoto(me.id, fotoId, cierre.id, blob);
+      }
+      await encolar(cierre.id, cierre.tipo, { foto_id: fotoId, motivo: $("#motivo").value.trim() || null });
+      $("#dlgCierre").close();
+      state.sel.delete(cierre.id);
+      await refreshLocal();
+      toast(cierre.tipo === "devolucion" ? "Devolución registrada" : "Entrega registrada");
+      Sync.run();
+    } catch (e) {
+      err.textContent = e.message; err.classList.remove("hidden");
+    } finally {
+      $("#cierreOk").disabled = false;
+    }
+  }
+
+  async function refreshLocal() { await loadLocal(); render(); }
+
+  // ------------------------------------------------------------------ eventos UI
+  $("#lista").addEventListener("change", (e) => {
+    const id = e.target.dataset.sel;
+    if (!id) return;
+    if (e.target.checked) state.sel.add(Number(id)); else state.sel.delete(Number(id));
+    renderBar();
+  });
+  $("#lista").addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (b.dataset.cerrar) abrirCierre(Number(b.dataset.id), b.dataset.cerrar);
+    if (b.dataset.selall) {
+      merged().filter((f) => f.remesa_numero === b.dataset.selall && ORDEN[f.estatusVista] < 2)
+        .forEach((f) => state.sel.add(f.id));
+      render();
+    }
+  });
+  $("#rech").addEventListener("click", async (e) => {
+    const id = e.target.dataset.okrech;
+    if (id) { await Outbox.clearRechazado(id); await refreshLocal(); }
+  });
+  $$("[data-lote]").forEach((b) => b.addEventListener("click", () => lote(b.dataset.lote)));
+  $$("[data-filtro]").forEach((b) => b.addEventListener("click", () => {
+    $$("[data-filtro]").forEach((x) => x.classList.toggle("active", x === b));
+    state.filtro = b.dataset.filtro; state.sel.clear(); render();
+  }));
+  $("#buscar").addEventListener("input", (e) => { state.q = e.target.value; render(); });
+  $("#btnSync").addEventListener("click", () => Sync.run());
+  $("#formCierre").addEventListener("submit", confirmarCierre);
+  $("#cierreCancelar").addEventListener("click", () => $("#dlgCierre").close());
+  $("#foto").addEventListener("change", () => {
+    const f = $("#foto").files[0];
+    if (!f) { $("#prev").classList.add("hidden"); return; }
+    $("#prevImg").src = URL.createObjectURL(f);
+    $("#prev").classList.remove("hidden");
+  });
+
+  // Perfil
+  $("#btnMenu").addEventListener("click", async () => {
+    $("#perfilMsg").classList.add("hidden");
+    $("#pC1").value = ""; $("#pC2").value = "";
+    try {
+      const p = await api("/api/me/perfil");
+      $("#pNombre").value = p.conductor?.nombre || "";
+      $("#pPlaca").value = p.conductor?.placa || "";
+      $("#pTel").value = p.conductor?.telefono || "";
+    } catch (_) { $("#pNombre").value = me.nombre; }
+    $("#bioSeccion").innerHTML = "";
+    Biometria.seccion($("#bioSeccion"), TL.user() || me);
+    $("#dlgPerfil").showModal();
+  });
+  $("#perfilCerrar").addEventListener("click", () => $("#dlgPerfil").close());
+  $("#formPerfil").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const msg = $("#perfilMsg");
+    try {
+      if (!$("#pC1").value || !$("#pC2").value) throw new Error("Escriba su clave actual y la nueva");
+      const r = await api("/api/me/clave", { method: "POST", body: { clave_actual: $("#pC1").value, clave_nueva: $("#pC2").value } });
+      TL.setSession(r.access_token, r.usuario);
+      $("#pC1").value = ""; $("#pC2").value = "";
+      const aviso = $("#avisoClave"); if (aviso) aviso.remove();
+      msg.className = "alert ok"; msg.textContent = "Clave cambiada";
+    } catch (err) {
+      msg.className = "alert err"; msg.textContent = navigator.onLine ? err.message : "Necesita señal para cambiar la clave";
+    }
+  });
+  $("#btnSalir").addEventListener("click", async () => {
+    const n = (await Outbox.pending(me.id)).length;
+    if (n && !confirm(`Tiene ${n} cambio(s) sin subir. Quedarán guardados en este teléfono hasta que vuelva a entrar. ¿Cerrar sesión?`)) return;
+    await TL.cerrarSesion();
+    location.replace("/");
+  });
+
+  Sync.onChange(async (info) => {
+    if (info.estado === "sincronizando") setSync(true, "Sincronizando…");
+    if (info.estado === "ok") setSync(true, "Al día · " + info.at.toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" }));
+    if (info.estado === "error") setSync(navigator.onLine, `No se pudo sincronizar. Reintento en ${Math.round(info.reintento / 1000)} s`);
+    if (info.estado === "offline") setSync(false, "Sin señal");
+    if (info.estado !== "sincronizando") await refreshLocal();
+  });
+
+  TL.registrarVista("conductor", "App del conductor");
+  (async () => {
+    await Outbox.open();
+    await refreshLocal();
+    Sync.run();
+  })();
+})();

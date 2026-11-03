@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b5cad">
+  <title>Panel de Transporte</title>
+  <link rel="icon" href="/static/icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap stack" style="--gap:8px">
+      <div class="row between">
+        <div class="row">
+          <img src="/static/icons/logo.png" alt="Fermetal" class="logo-app" width="67" height="40">
+          <strong>Tracking Logístico</strong>
+        </div>
+        <div class="row">
+          <small id="quien"></small>
+          <button class="small" id="btnClave" type="button">Mi clave</button>
+          <button class="small" id="btnSalir" type="button">Salir</button>
+        </div>
+      </div>
+      <nav class="tabs" id="tabs" aria-label="Secciones"></nav>
+    </div>
+  </header>
+
+  <main class="wrap" id="view" aria-live="polite"></main>
+
+  <dialog id="dlg">
+    <form method="dialog" id="dlgForm">
+      <div class="dlg-body stack" id="dlgBody"></div>
+      <div class="dlg-foot" id="dlgFoot"></div>
+    </form>
+  </dialog>
+
+  <script src="/static/common.js"></script>
+  <script src="/static/biometria.js"></script>
+  <script src="/static/xlsx-lite.js"></script>
+  <script src="/static/ocr-local.js"></script>
+  <script src="/static/indicador-grafica.js"></script>
+  <script src="/static/panel.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.egci.tracking",
+        "sha256_cert_fingerprints": ["F3:02:83:C5:75:E3:51:BA:84:25:3A:17:25:5B:BA:45:3B:CA:7A:81:79:BB:74:EC:8B:0D:2F:D2:89:14:87:DD"]
+      }
+    }]

@@ -1,0 +1,36 @@
+﻿TRACKING LOGÍSTICO · APK PARA LOS CONDUCTORES · VERSIÓN 1.24.1
+================================================================
+
+Archivos
+--------
+  Tracking_Logistico_v1.24.1.apk ... instalar en los teléfonos Android (enviar por WhatsApp, Drive o cable).
+  Tracking_Logistico_v1.24.1.aab ... solo si algún día se publica en Google Play.
+  assetlinks.json .................. huella del APK para el dominio (ya copiada a tracking-logistico\android\).
+  LLAVE_DE_FIRMA_no_compartir\ ..... signing.keystore + signing-key-info.txt (claves de la llave).
+                                     GUÁRDELA EN UN LUGAR SEGURO: sin ella no se pueden sacar
+                                     actualizaciones de esta misma app. No la envíe por WhatsApp.
+
+Datos de la app
+---------------
+  Nombre: Tracking Logístico (ícono Fermetal con el camión)
+  Paquete: com.egci.tracking · Versión 1.24.1 (código 12401) · Android 7 o superior
+  Abre: https://tracking-logistico-tawny.vercel.app/conductor
+  La versión del sistema se ve al pie de la lista de facturas y en «Mis datos».
+
+Pasos
+-----
+  1. Publique en Vercel con «2 - PUBLICAR EN VERCEL.bat». Además de subir la versión 1.24.1,
+     ahora configura sola la variable ANDROID_ASSETLINKS_JSON con tracking-logistico\android\assetlinks.json,
+     para que el APK abra a pantalla completa (sin la barra de la dirección).
+     Comprobar: https://tracking-logistico-tawny.vercel.app/.well-known/assetlinks.json
+  2. En cada teléfono: abrir el .apk, permitir «Instalar apps desconocidas» e Instalar.
+     Si aparece Play Protect: «Instalar de todas formas». Se necesita Google Chrome actualizado.
+  3. Si el teléfono tiene el APK anterior (14/10/2026, paquete app.vercel.tracking_logistico_tawny.twa),
+     esta es una app distinta: desinstale la anterior después de entrar en la nueva.
+     Antes de desinstalar, abra la app vieja con señal y pulse «Sincronizar» para no perder cambios pendientes.
+
+Versiones nuevas
+----------------
+  Los cambios del sistema llegan solos al APK (carga la página publicada). Solo hace falta otro APK
+  si cambia el nombre, el ícono o el dominio: en PWABuilder use «Signing key: Use mine» con la llave
+  de esta carpeta, el mismo paquete com.egci.tracking y un «Version code» mayor que 12401.

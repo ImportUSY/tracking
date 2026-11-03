@@ -1,0 +1,8 @@
+# HTTPS automático (Let's Encrypt). El modo sin señal y la cámara de la PWA requieren HTTPS.
+{$DOMAIN:localhost} {
+	encode gzip
+	request_body {
+		max_size 40MB
+	}
+	reverse_proxy app:8000
+}

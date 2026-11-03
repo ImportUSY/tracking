@@ -1,0 +1,26 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.egci.tracking",
+      "sha256_cert_fingerprints": [
+        "F3:02:83:C5:75:E3:51:BA:84:25:3A:17:25:5B:BA:45:3B:CA:7A:81:79:BB:74:EC:8B:0D:2F:D2:89:14:87:DD"
+      ]
+    }
+  },
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.vercel.tracking_logistico_tawny.twa",
+      "sha256_cert_fingerprints": [
+        "4B:EC:03:9C:D2:75:47:26:C9:EB:75:7C:A4:B7:92:33:64:B3:7C:16:93:16:98:7F:75:9C:AC:9F:53:06:6F:DC"
+      ]
+    }
+  }
+]

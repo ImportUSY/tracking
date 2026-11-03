@@ -1,0 +1,30 @@
+{
+ "det": {
+  "partes": [
+   "det.onnx.0"
+  ],
+  "bytes": 2432880,
+  "sha256": "3439588c030faea393a54515f51e983d8e155b19a2e8aba7891934c1cf0de526"
+ },
+ "rec": {
+  "partes": [
+   "rec.onnx.0",
+   "rec.onnx.1",
+   "rec.onnx.2",
+   "rec.onnx.3"
+  ],
+  "bytes": 10690752,
+  "sha256": "897a3ededb38fee0dae2c1ccee38241f37df202c9509e3abca02e9217c5ee615"
+ },
+ "wasm": {
+  "partes": [
+   "../onnxruntime-web-1.30.0/ort-wasm-simd-threaded.wasm.0",
+   "../onnxruntime-web-1.30.0/ort-wasm-simd-threaded.wasm.1",
+   "../onnxruntime-web-1.30.0/ort-wasm-simd-threaded.wasm.2",
+   "../onnxruntime-web-1.30.0/ort-wasm-simd-threaded.wasm.3",
+   "../onnxruntime-web-1.30.0/ort-wasm-simd-threaded.wasm.4"
+  ],
+  "bytes": 14239897,
+  "sha256": "3398c10d07d229bd91b364548e130e0e51a8e5704b88c7c083ebbeb78842dee2"
+ }
+}

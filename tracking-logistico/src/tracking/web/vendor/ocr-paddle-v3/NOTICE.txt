@@ -1,0 +1,9 @@
+Modelos de reconocimiento de texto PaddleOCR PP-OCRv3 (detección y reconocimiento), en formato ONNX.
+
+- Origen: proyecto PaddleOCR (PaddlePaddle Authors), modelos ch_PP-OCRv3_det_infer y
+  ch_PP-OCRv3_rec_infer convertidos a ONNX y distribuidos en el paquete rapidocr_onnxruntime 1.2.3
+  (RapidAI). dict.txt es el diccionario de caracteres incluido en los metadatos del modelo.
+- Licencia: Apache License 2.0 (ver LICENSE-Apache-2.0.txt).
+- Modificaciones: ninguna en los modelos; solo se dividen en partes de 3 MB (det.onnx.N, rec.onnx.N)
+  para respetar el límite de tamaño por respuesta de Vercel. manifest.json lista las partes, el
+  tamaño total y el SHA-256 de cada archivo reconstruido.

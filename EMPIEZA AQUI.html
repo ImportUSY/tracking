@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Empieza aquí · Tracking Logístico</title>
+<style>
+  :root { --bg:#f4f6f8; --card:#fff; --text:#1c2430; --muted:#5f6b7a; --line:#dde3ea; --pri:#0b5cad; --pri-soft:#e6f0fa; --ok:#1a7f37; --warn:#9a6700; --code:#eef2f6; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f141a; --card:#18202a; --text:#e6edf3; --muted:#9aa7b4; --line:#2a3542; --pri:#4c9be8; --pri-soft:#16283b; --ok:#57ab5a; --warn:#d4a72c; --code:#0f141a; }
+  }
+  * { box-sizing:border-box }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.55 "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif }
+  main { max-width:920px; margin:0 auto; padding:24px 16px 64px }
+  header { display:flex; gap:14px; align-items:center; margin-bottom:8px }
+  header .logo { width:48px; height:48px; border-radius:12px; background:var(--pri); display:grid; place-items:center; color:#fff; font-weight:800; font-size:22px; flex:none }
+  h1 { font-size:1.7rem; margin:0 }
+  h2 { font-size:1.25rem; margin:0 0 12px; display:flex; gap:10px; align-items:center }
+  h3 { font-size:1.02rem; margin:18px 0 6px }
+  .sub { color:var(--muted); margin:0 }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; margin-top:18px }
+  .num { width:32px; height:32px; border-radius:50%; background:var(--pri); color:#fff; display:inline-grid; place-items:center; font-weight:800; font-size:1rem; flex:none }
+  code, .path { font-family:Consolas, "Cascadia Mono", ui-monospace, monospace; background:var(--code); border:1px solid var(--line); border-radius:6px; padding:1px 6px; font-size:.92em; word-break:break-all }
+  .tree { font-family:Consolas, "Cascadia Mono", ui-monospace, monospace; background:var(--code); border:1px solid var(--line); border-radius:10px; padding:14px 16px; white-space:pre; overflow-x:auto; font-size:.9rem; line-height:1.6 }
+  .tree b { color:var(--pri) }
+  .tree i { color:var(--muted); font-style:normal }
+  table { width:100%; border-collapse:collapse; font-size:.95rem }
+  th, td { text-align:left; padding:9px 8px; border-bottom:1px solid var(--line); vertical-align:top }
+  th { font-size:.78rem; text-transform:uppercase; letter-spacing:.03em; color:var(--muted) }
+  .wrap { overflow-x:auto }
+  ol, ul { padding-left:22px; margin:6px 0 }
+  li { margin:5px 0 }
+  .tip { background:var(--pri-soft); border-left:4px solid var(--pri); border-radius:8px; padding:10px 14px; margin-top:12px }
+  .warn { border-left-color:var(--warn) }
+  .tag { display:inline-block; font-size:.75rem; font-weight:700; padding:2px 8px; border-radius:999px; background:var(--pri-soft); color:var(--pri); margin-left:6px; vertical-align:middle }
+  .ok { color:var(--ok); font-weight:700 }
+  .toc { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px }
+  .toc a { text-decoration:none; color:var(--pri); background:var(--card); border:1px solid var(--line); border-radius:999px; padding:5px 12px; font-size:.9rem }
+  a { color:var(--pri) }
+  @media (max-width:640px) { section > table { display:block; overflow-x:auto } section { padding:16px } th, td { padding:7px 6px } }
+  @media print { body { background:#fff } section { break-inside:avoid; box-shadow:none } .toc { display:none } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="logo">T</div>
+    <div>
+      <h1>Empieza aquí · Tracking Logístico</h1>
+      <p class="sub">Qué abrir, en qué orden, con qué usuario y en qué dirección.</p>
+    </div>
+  </header>
+
+  <nav class="toc">
+    <a href="#carpeta">Dónde está todo</a>
+    <a href="#ruta">Ruta en 5 pasos</a>
+    <a href="#pc">Probar en tu PC</a>
+    <a href="#vercel">Publicar en Vercel</a>
+    <a href="#primer-uso">Primer uso</a>
+    <a href="#direcciones">Direcciones</a>
+    <a href="#usuarios">Usuarios y claves</a>
+    <a href="#apk">APK</a>
+    <a href="#problemas">Si algo falla</a>
+  </nav>
+
+  <section id="carpeta">
+    <h2>📁 Dónde está todo</h2>
+    <p>Todo está en <span class="path">C:\Desarrollo\Tracking - Octubre</span>:</p>
+<div class="tree"><b>C:\Desarrollo\Tracking - Octubre\</b>
+├── <b>EMPIEZA AQUI.html</b>              <i>← esta guía</i>
+├── <b>1 - PROBAR EN MI PC.bat</b>        <i>← doble clic: abre el programa en esta computadora</i>
+├── <b>2 - PUBLICAR EN VERCEL.bat</b>     <i>← doble clic: lo publica en internet</i>
+├── REMESA.xlsx                     <i>← hoja de remesas (también trae la hoja PLACAS)</i>
+├── Listado Codigo Vendedores.xlsx  <i>← vendedores</i>
+├── Libro2.xlsx                     <i>← formato de Cobranzas (referencia)</i>
+├── prd-tracking-*.md              <i>← documento de requisitos (PRD)</i>
+├── Claude outputs\                 <i>← capturas de la prueba realizada</i>
+├── tracking-logistico.tar.gz       <i>← copia comprimida del programa (se puede borrar)</i>
+└── <b>tracking-logistico\</b>             <i>← EL PROGRAMA (no mover archivos de adentro)</i>
+    ├── DESPLIEGUE_VERCEL.md        <i>← guía detallada de Vercel</i>
+    ├── APK_ANDROID.md              <i>← guía detallada del APK</i>
+    ├── README.md                   <i>← documentación técnica</i>
+    ├── scripts\                    <i>← instaladores (los usan los .bat)</i>
+    └── src\                        <i>← código del programa</i></div>
+  </section>
+
+  <section id="ruta">
+    <h2>🧭 Ruta recomendada en 5 pasos</h2>
+    <table>
+      <tr><th>#</th><th>Qué hacer</th><th>Dónde</th><th>Tiempo</th></tr>
+      <tr><td><span class="num">1</span></td><td><b>Probar en tu PC</b> (opcional, para conocerlo)</td><td><code>1 - PROBAR EN MI PC.bat</code></td><td>10 min</td></tr>
+      <tr><td><span class="num">2</span></td><td><b>Publicar en internet</b> con Vercel</td><td><code>2 - PUBLICAR EN VERCEL.bat</code></td><td>20 min</td></tr>
+      <tr><td><span class="num">3</span></td><td><b>Primer uso</b>: cargar conductores, vendedores y REMESA</td><td><code>https://tracking-logistico.vercel.app</code></td><td>10 min</td></tr>
+      <tr><td><span class="num">4</span></td><td><b>Generar el APK</b> e instalarlo en los teléfonos</td><td><code>https://www.pwabuilder.com</code></td><td>15 min</td></tr>
+      <tr><td><span class="num">5</span></td><td><b>Probar con un conductor real</b> y una remesa real</td><td>En la calle 🙂</td><td>1 día</td></tr>
+    </table>
+  </section>
+
+  <section id="pc">
+    <h2><span class="num">1</span> Probar en tu PC <span class="tag">opcional</span></h2>
+    <ol>
+      <li>Si no tienes Python, abre PowerShell y escribe <code>winget install Python.Python.3.12</code>
+          (o instálalo desde <a href="https://www.python.org/downloads/">python.org</a> marcando <i>“Add python.exe to PATH”</i>).</li>
+      <li>Haz doble clic en <b><code>1 - PROBAR EN MI PC.bat</code></b>.</li>
+      <li>La primera vez instala el programa (1–3 min) y te pide crear la <b>clave del usuario <code>supervisor</code></b>
+          (mínimo 6 caracteres; al escribir no se ve nada, es normal).</li>
+      <li>Se abre solo el navegador en <b><a href="http://localhost:8000">http://localhost:8000</a></b>. Entra con <code>supervisor</code> y tu clave.</li>
+      <li><b>Deja la ventana negra abierta</b> mientras lo usas; ciérrala para apagarlo. Las próximas veces arranca en segundos.</li>
+    </ol>
+    <div class="tip warn">En tu PC los datos se guardan en <span class="path">tracking-logistico\data\</span> y solo los ves tú.
+      El modo sin señal y la cámara de los teléfonos necesitan la versión publicada en Vercel (HTTPS).</div>
+  </section>
+
+  <section id="vercel">
+    <h2><span class="num">2</span> Publicar en internet (Vercel)</h2>
+    <ol>
+      <li>Instala <b>Node.js</b>: en PowerShell <code>winget install OpenJS.NodeJS.LTS</code> (o <a href="https://nodejs.org">nodejs.org</a>).</li>
+      <li>Crea tu cuenta gratuita en <a href="https://vercel.com/signup"><b>vercel.com/signup</b></a> (puedes entrar con Google o GitHub).</li>
+      <li>Haz doble clic en <b><code>2 - PUBLICAR EN VERCEL.bat</code></b> y sigue lo que dice la ventana:
+        <ul>
+          <li><b>Iniciar sesión</b>: se abre el navegador; confirma con tu cuenta de Vercel.</li>
+          <li><b>Base de datos Neon</b>: acepta y elige la región <b>Washington D.C. (us-east)</b>. Cuando aparezca conectada, presiona <kbd>Enter</kbd>.</li>
+          <li><b>Clave del supervisor</b>: escribe la clave del usuario <code>supervisor</code> para internet.</li>
+        </ul>
+      </li>
+      <li>Al final verás la dirección: <b><code>https://tracking-logistico.vercel.app</code></b>
+          (si ese nombre ya estaba ocupado, Vercel te muestra otra parecida: usa esa en todo lo que sigue).</li>
+      <li>Comprueba: <code>https://tracking-logistico.vercel.app/health</code> debe mostrar <code>"status":"ok"</code>.</li>
+    </ol>
+    <div class="tip">¿Prefieres hacerlo desde la página web de Vercel con GitHub? Está explicado en
+      <span class="path">tracking-logistico\DESPLIEGUE_VERCEL.md</span> (Opción B).</div>
+  </section>
+
+  <section id="primer-uso">
+    <h2><span class="num">3</span> Primer uso (en este orden)</h2>
+    <p>Entra a <b><code>https://tracking-logistico.vercel.app</code></b> con <code>supervisor</code> y tu clave.</p>
+    <table>
+      <tr><th>Orden</th><th>Pestaña del panel</th><th>Qué haces</th><th>Archivo</th></tr>
+      <tr><td>a</td><td><b>Conductores</b> → <i>Cargar desde Excel</i></td><td>Crea conductores y camiones. <b>Imprime las claves temporales</b> que aparecen (se muestran una sola vez).</td><td><code>REMESA.xlsx</code> (hoja <code>PLACAS</code>)</td></tr>
+      <tr><td>b</td><td><b>Vendedores</b> → <i>Cargar desde Excel</i></td><td>Carga los 89 vendedores. Puedes agregar su correo para avisos.</td><td><code>Listado Codigo Vendedores.xlsx</code></td></tr>
+      <tr><td>c</td><td><b>Cargar REMESA</b></td><td>Elige el archivo → <i>Analizar</i> → revisa el resumen → en <i>“Solo desde”</i> pon una fecha reciente (para no cargar todo el año) → <i>Confirmar y cargar</i>.</td><td><code>REMESA.xlsx</code></td></tr>
+      <tr><td>d</td><td><b>Usuarios</b> → <i>Nuevo</i></td><td>Crea los usuarios de <b>Transportista</b> y <b>Cobranzas</b>.</td><td>—</td></tr>
+      <tr><td>e</td><td>—</td><td>Entrega a cada conductor su <b>cédula + clave temporal</b> y la dirección (o el APK).</td><td>—</td></tr>
+    </table>
+  </section>
+
+  <section id="direcciones">
+    <h2>🌐 Direcciones</h2>
+    <div class="wrap"><table>
+      <tr><th>Quién</th><th>En internet (Vercel)</th><th>En tu PC (prueba)</th></tr>
+      <tr><td><b>Supervisor, Transportista, Cobranzas</b><br><small>panel de control</small></td><td><code>https://tracking-logistico.vercel.app</code></td><td><code>http://localhost:8000</code></td></tr>
+      <tr><td><b>Conductores</b><br><small>teléfono / APK</small></td><td><code>https://tracking-logistico.vercel.app/conductor</code></td><td><code>http://localhost:8000/conductor</code></td></tr>
+      <tr><td><b>Vendedores</b><br><small>sin usuario ni clave</small></td><td><code>https://tracking-logistico.vercel.app/tracking</code></td><td><code>http://localhost:8000/tracking</code></td></tr>
+      <tr><td><b>Verificar que funciona</b></td><td><code>https://tracking-logistico.vercel.app/health</code></td><td><code>http://localhost:8000/health</code></td></tr>
+      <tr><td><b>Administrar Vercel</b></td><td colspan="2"><code>https://vercel.com/dashboard</code> → proyecto <b>tracking-logistico</b></td></tr>
+      <tr><td><b>Generar el APK</b></td><td colspan="2"><code>https://www.pwabuilder.com</code></td></tr>
+    </table></div>
+    <div class="tip">Comparte con los vendedores solo <code>…/tracking</code>: escriben la factura (ej. <code>FAC-U00099434</code>), el pedido o el tracking (<code>TR-…</code>) y ven el estatus. No muestra montos ni datos personales.</div>
+  </section>
+
+  <section id="usuarios">
+    <h2>🔑 Usuarios y claves</h2>
+    <table>
+      <tr><th>Rol</th><th>Usuario</th><th>Clave</th><th>Lo crea</th></tr>
+      <tr><td>Supervisor</td><td><code>supervisor</code></td><td>La que escribiste al instalar/publicar</td><td>Los archivos .bat</td></tr>
+      <tr><td>Conductor</td><td>Su <b>cédula</b> (ej. <code>23806960</code>)</td><td>Temporal; al entrar crea la suya</td><td><b>Supervisor o Transportista</b>: Conductores → Cargar desde Excel / Nuevo</td></tr>
+      <tr><td>Transportista</td><td>El que elijas (ej. <code>transporte</code>)</td><td>Temporal o la que definas</td><td>Supervisor: Usuarios → Nuevo</td></tr>
+      <tr><td>Cobranzas</td><td>El que elijas (ej. <code>cobranzas</code>)</td><td>Temporal o la que definas</td><td>Usuarios → Nuevo</td></tr>
+      <tr><td>Vendedor</td><td colspan="3">No necesita usuario: usa <code>…/tracking</code></td></tr>
+    </table>
+    <div class="tip warn">La clave de tu PC y la de Vercel son independientes: son dos instalaciones separadas.
+      Si un conductor olvida su clave: <b>Conductores → Clave</b>.</div>
+    <div class="tip">Novedades v1.2 (roles y permisos):
+      <ul>
+        <li>Las claves están cifradas y <b>nadie puede verlas</b>. El supervisor puede ver el <b>estado de clave</b>
+          de cualquier usuario y <b>restablecerla</b> (Usuarios → Clave). El transportista puede hacerlo solo con conductores.</li>
+        <li>El conductor solo ve <b>sus</b> remesas y facturas y solo marca Cargado, En tránsito, Entregada o Devolución.
+          Sus datos (nombre, placa, teléfono) los corrige la oficina.</li>
+        <li>Pestaña <b>Auditoría</b> (supervisor): quién creó usuarios o cambió claves.</li>
+        <li>¿Quieres que <b>solo el transportista</b> cree conductores? Agrega la línea
+          <code>CONDUCTOR_CREATOR_ROLES=transportista</code> al archivo <code>.env</code> (y en Vercel, como variable de entorno).</li>
+      </ul></div>
+  </section>
+
+  <section id="apk">
+    <h2><span class="num">4</span> APK para los teléfonos</h2>
+    <ol>
+      <li>Abre <a href="https://www.pwabuilder.com"><b>www.pwabuilder.com</b></a>, escribe <code>https://tracking-logistico.vercel.app/conductor</code> y pulsa <b>Start</b>.</li>
+      <li><b>Package for stores</b> → <b>Android</b> → <b>Generate Package</b>. Usa <i>Package ID</i> <code>com.egci.tracking</code>, nombre <code>Tracking Logístico</code>, <i>Signing key</i>: <b>New</b>. Descarga el ZIP.</li>
+      <li>Guarda el ZIP completo en <span class="path">C:\Desarrollo\Tracking - Octubre\APK\</span>. <b>No pierdas</b> <code>signing.keystore</code> ni <code>signing-key-info.txt</code>.</li>
+      <li>En Vercel: proyecto → <b>Settings → Environment Variables</b> → crea <code>ANDROID_ASSETLINKS_JSON</code> con el contenido de <code>assetlinks.json</code> → <b>Redeploy</b>. (Así abre sin barra del navegador.)</li>
+      <li>Envía el archivo <code>.apk</code> a cada teléfono (WhatsApp, Drive o cable), ábrelo y permite <i>“Instalar apps desconocidas”</i>.</li>
+    </ol>
+    <div class="tip">Sin APK también funciona: en el teléfono abre <code>https://tracking-logistico.vercel.app/conductor</code> en Chrome → menú ⋮ → <b>Agregar a pantalla de inicio</b> (en iPhone: Safari → Compartir → <i>Agregar a inicio</i>).
+      Detalle completo en <span class="path">tracking-logistico\APK_ANDROID.md</span>.</div>
+  </section>
+
+  <section id="problemas">
+    <h2>🛟 Si algo falla</h2>
+    <table>
+      <tr><th>Síntoma</th><th>Solución</th></tr>
+      <tr><td>El .bat dice <i>“Falta Python”</i> o <i>“Falta Node.js”</i></td><td>Instálalo con el comando <code>winget</code> que muestra y vuelve a abrir el .bat.</td></tr>
+      <tr><td>Windows pregunta por el firewall al probar en tu PC</td><td>Permitir en redes privadas.</td></tr>
+      <tr><td>La página de Vercel da error 500</td><td>vercel.com → proyecto → <b>Logs</b>. Lo usual: falta conectar Neon (Storage) o la variable <code>SECRET_KEY</code>. Vuelve a ejecutar <code>2 - PUBLICAR EN VERCEL.bat</code>.</td></tr>
+      <tr><td>Olvidé la clave del supervisor en tu PC</td><td>Borra <span class="path">tracking-logistico\data\supervisor.ok</span> y abre de nuevo <code>1 - PROBAR EN MI PC.bat</code>: te pedirá una clave nueva.</td></tr>
+      <tr><td>El conductor no ve sus facturas</td><td>La remesa debe estar cargada con su cédula. Revisa en <b>Remesas</b> o reasígnala desde ahí.</td></tr>
+      <tr><td>Cambios “Pendientes por subir” en el teléfono</td><td>Es el modo sin señal: se suben solos al volver la conexión, o con el botón <b>Sincronizar</b>.</td></tr>
+    </table>
+    <p class="sub" style="margin-top:12px">Versión del programa: 1.1.0 · Probado con tu REMESA real (142 remesas, 2.082 facturas) <span class="ok">✔</span></p>
+  </section>
+</main>
+</body>
+</html>

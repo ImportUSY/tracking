@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tracking-logistico"
+version = "1.26.0"
+description = "Seguimiento de facturas desde Transporte hasta la entrega o devolución al cliente."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110,<1.0",
+    "uvicorn[standard]>=0.27",
+    "sqlalchemy>=2.0,<2.2",
+    "alembic>=1.13",
+    "pydantic>=2.6,<3",
+    "pydantic-settings>=2.2",
+    "python-multipart>=0.0.9",
+    "openpyxl>=3.1",
+    "argon2-cffi>=23.1",
+    "PyJWT>=2.8",
+    "tenacity>=8.2",
+    "httpx>=0.27",
+    "psycopg[binary]>=3.1",
+    "webauthn>=2.2,<3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.4", "mypy>=1.8"]
+
+[project.scripts]
+tracking = "tracking.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+tracking = ["web/*", "web/icons/*", "web/vendor/*/*", "migrations/*.py", "migrations/*.mako", "migrations/versions/*.py"]
+
+# --- Vercel: la app FastAPI está en index.py (variable `app`) ---
+[tool.vercel]
+entrypoint = "index:app"
+
+# Los estáticos se sirven desde la función para conservar las cabeceras de seguridad y el service worker.
+[tool.vercel.fastapi.static]
+cdn = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "src"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["B008", "RUF001", "RUF002", "RUF003", "UP017"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+ignore_missing_imports = true
+plugins = ["pydantic.mypy"]
+mypy_path = "src"
+packages = ["tracking"]

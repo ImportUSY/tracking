@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b5cad">
+  <title>Mis facturas</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap row between">
+      <div>
+        <strong id="nombre">Conductor</strong><br>
+        <span class="sync"><span id="dot" class="dot"></span><span id="syncTxt">Conectado</span></span>
+      </div>
+      <div class="row">
+        <button class="small" id="btnSync" type="button">Sincronizar</button>
+        <button class="small" id="btnMenu" type="button" aria-label="Mis datos">Mis datos</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap stack" id="main">
+    <div id="aviso" class="alert warn hidden" role="status"></div>
+    <div id="rech" class="hidden"></div>
+    <div class="row">
+      <div class="tabs grow" role="tablist">
+        <button type="button" class="active" data-filtro="abiertas">Pendientes <span id="cAb"></span></button>
+        <button type="button" data-filtro="cerradas">Cerradas <span id="cCe"></span></button>
+      </div>
+    </div>
+    <input id="buscar" type="search" placeholder="Buscar factura, cliente o pedido" aria-label="Buscar">
+    <div id="lista"></div>
+    <footer class="creditos version-conductor">
+      <div>Tracking Logístico · Para <strong>Fermetal</strong></div>
+      <div class="version-app"><span data-version>Versión</span></div>
+    </footer>
+  </main>
+
+  <div class="actionbar hidden" id="bar">
+    <span id="selTxt" class="muted" style="align-self:center;white-space:nowrap"></span>
+    <button type="button" class="primary" data-lote="en_transito">Por Entregar</button>
+  </div>
+
+  <!-- Entregar / devolver -->
+  <dialog id="dlgCierre">
+    <form method="dialog" id="formCierre">
+      <div class="dlg-body stack">
+        <h2 id="cierreTitulo" style="margin-top:0"></h2>
+        <p id="cierreInfo" class="muted" style="margin:0"></p>
+        <div>
+          <label for="foto" id="fotoLabel">Foto de la factura</label>
+          <input id="foto" type="file" accept="image/*" capture="environment">
+          <small id="fotoAyuda"></small>
+          <div id="prev" class="hidden" style="margin-top:8px"><img id="prevImg" class="thumb" alt="Vista previa"></div>
+        </div>
+        <div id="motivoBox">
+          <label for="motivo" id="motivoLabel">Motivo (opcional, también puede escribirlo en la factura)</label>
+          <textarea id="motivo" maxlength="1000"></textarea>
+        </div>
+        <div id="cierreErr" class="alert err hidden"></div>
+      </div>
+      <div class="dlg-foot">
+        <button type="button" id="cierreCancelar">Cancelar</button>
+        <button type="submit" class="primary" id="cierreOk">Confirmar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Mis datos -->
+  <dialog id="dlgPerfil">
+    <form method="dialog" id="formPerfil">
+      <div class="dlg-body stack">
+        <h2 style="margin-top:0">Mis datos</h2>
+        <div><label for="pNombre">Nombre</label><input id="pNombre" readonly></div>
+        <div><label for="pPlaca">Placa</label><input id="pPlaca" readonly></div>
+        <div><label for="pTel">Teléfono</label><input id="pTel" readonly></div>
+        <p class="muted" style="margin:0">Si algún dato está mal, pida a la oficina (transportista o supervisor) que lo corrija.</p>
+        <p class="muted version-app" style="margin:0">Tracking Logístico · <strong data-version>Versión</strong></p>
+        <hr>
+        <h3>Cambiar clave</h3>
+        <div><label for="pC1">Clave actual</label><input id="pC1" type="password" autocomplete="current-password"></div>
+        <div><label for="pC2">Clave nueva</label><input id="pC2" type="password" autocomplete="new-password" minlength="6"></div>
+        <div id="perfilMsg" class="alert hidden"></div>
+        <div id="bioSeccion" class="stack"></div>
+      </div>
+      <div class="dlg-foot">
+        <button type="button" id="btnSalir" class="danger">Cerrar sesión</button>
+        <button type="button" id="perfilCerrar">Cerrar</button>
+        <button type="submit" class="primary">Cambiar clave</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/common.js"></script>
+  <script src="/static/biometria.js"></script>
+  <script src="/static/outbox.js"></script>
+  <script src="/static/conductor.js"></script>
+</body>
+</html>
