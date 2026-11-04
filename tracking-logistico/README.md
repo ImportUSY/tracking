@@ -483,6 +483,12 @@ lectura, salvo su clave y la vista previa de correos.
 * Requiere **https** (o `localhost`): por la IP de la red local (`http://192.168…`) el botón no aparece.
   Variables: `BIOMETRIA_HABILITADA`, `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGENES` (vacías = dominio de la app).
 
+## 4r. Versión en el encabezado del panel (v1.26.1)
+
+* El encabezado del panel muestra, junto a «Tracking Logístico», la versión y la fecha de creación
+  («Versión 1.26.1 · Octubre 2026»), tomadas de `/api/config` igual que los pies de página.
+* La pantalla de ingreso ya no muestra la línea de autoría («Creado por…»): solo la versión.
+
 ## 5. Pruebas y calidad
 
 ```bash

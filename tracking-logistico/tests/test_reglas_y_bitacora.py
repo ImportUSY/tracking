@@ -286,7 +286,9 @@ def test_config_trae_version_y_fecha_de_creacion(client: TestClient) -> None:
     assert c["version"] == __version__ and c["version_publica"] == __version__
     assert c["fecha_creacion"] == "Octubre 2026"
     html = client.get("/").text
-    assert "Creado por" in html and "data-version" in html and "data-fecha-creacion" in html
+    assert "Creado por" not in html and "data-version" in html and "data-fecha-creacion" in html
+    panel = client.get("/panel").text
+    assert "data-version" in panel and "data-fecha-creacion" in panel
 
 
 def test_migracion_0008_enlaza_reingresos_y_vuelve_atras(tmp_path: Any) -> None:

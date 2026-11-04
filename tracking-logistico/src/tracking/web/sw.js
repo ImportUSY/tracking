@@ -5,7 +5,7 @@
  *   navegador, que respeta las cabeceras actuales del servidor (seguridad y aislamiento para hilos).
  * - API: nunca se cachea aquí (los datos sin señal los maneja IndexedDB en outbox.js).
  */
-const VERSION = "tl-v1.26.0";
+const VERSION = "tl-v1.26.1";
 const SHELL = [
   "/", "/conductor", "/tracking",
   "/static/app.css", "/static/common.js", "/static/biometria.js", "/static/login.js", "/static/outbox.js", "/static/conductor.js",
