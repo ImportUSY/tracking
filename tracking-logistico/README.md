@@ -489,6 +489,16 @@ lectura, salvo su clave y la vista previa de correos.
   («Versión 1.26.1 · Octubre 2026»), tomadas de `/api/config` igual que los pies de página.
 * La pantalla de ingreso ya no muestra la línea de autoría («Creado por…»): solo la versión.
 
+## 4s. Archivos de la app siempre al día tras publicar (v1.26.2)
+
+* Síntoma corregido: después de publicar en Vercel, el panel mostraba «Hay una versión nueva del programa:
+  recargue la página…» aunque se recargara, porque el teléfono seguía usando el `panel.js` anterior.
+* Causa: Starlette arma el `ETag` con fecha + tamaño del archivo, y en Vercel **todos** los archivos tienen la
+  misma fecha. Si la versión nueva pesa lo mismo (p. ej. «1.26.0» → «1.26.1»), el ETag no cambia: el navegador
+  pregunta «¿cambió?», el servidor responde 304 y queda el archivo viejo.
+* Solución: páginas, `sw.js`, manifiesto y `/static/*` llevan un `ETag` calculado sobre el **contenido**
+  (`archivo_web` y `EstaticosWeb` en `main.py`) y sin `Last-Modified`. Prueba: `tests/test_etag_estaticos.py`.
+
 ## 5. Pruebas y calidad
 
 ```bash

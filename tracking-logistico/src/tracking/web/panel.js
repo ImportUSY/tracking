@@ -12,7 +12,7 @@
   const PERM = new Set(MISPERM.permisos_interfaz && MISPERM.permisos_interfaz.length ? MISPERM.permisos_interfaz : MISPERM.permisos);
   // Página y servidor deben ser de la misma versión. Si no, casi siempre es una ventana vieja del
   // programa que sigue abierta (o una página guardada en caché): se avisa en vez de fallar en silencio.
-  const VERSION_PANEL = "1.26.1";
+  const VERSION_PANEL = "1.26.2";
   const cmpVer = (a, b) => { const x = a.split(".").map(Number), y = b.split(".").map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0); } return 0; };
   const AVISO_VERSION_VIEJA = "El programa que está abierto en esta PC es una versión anterior. Cierre TODAS las ventanas negras de «Tracking Logístico» y abra de nuevo «1 - PROBAR EN MI PC.bat» (o vuelva a publicar en Vercel).";
   api("/api/config").then((c) => {

@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import os
 import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +22,8 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import Headers
+from starlette.staticfiles import NotModifiedResponse
 
 from tracking import __version__
 from tracking.api import (
@@ -51,6 +56,33 @@ from tracking.tenancy import ViolacionAislamiento
 
 log = logging.getLogger("tracking")
 WEB_DIR = Path(__file__).parent / "web"
+
+
+@lru_cache(maxsize=256)
+def _etag_contenido(ruta: str, mtime: float, tamano: int) -> str:
+    return f'"{hashlib.md5(Path(ruta).read_bytes(), usedforsecurity=False).hexdigest()}"'
+
+
+def archivo_web(ruta: Path | str, stat_result: os.stat_result | None = None, **kwargs: Any) -> FileResponse:
+    """FileResponse con ETag por contenido y sin Last-Modified.
+
+    En Vercel todos los archivos tienen la misma fecha: el ETag de Starlette (fecha + tamaño) no cambia
+    cuando una versión nueva pesa lo mismo, y el navegador recibe 304 y se queda con el archivo viejo.
+    """
+    st = stat_result or os.stat(ruta)
+    resp = FileResponse(ruta, stat_result=st, **kwargs)
+    resp.headers["etag"] = _etag_contenido(str(ruta), st.st_mtime, st.st_size)
+    del resp.headers["last-modified"]
+    return resp
+
+
+class EstaticosWeb(StaticFiles):
+    def file_response(self, full_path: Any, stat_result: os.stat_result, scope: Any,
+                      status_code: int = 200) -> Response:
+        resp = archivo_web(full_path, stat_result, status_code=status_code)
+        if self.is_not_modified(resp.headers, Headers(scope=scope)):
+            return NotModifiedResponse(resp.headers)
+        return resp
 
 CSP = (
     "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
@@ -216,7 +248,7 @@ def create_app(settings: Settings | None = None, database: Database | None = Non
     # ---------------- PWA estática ----------------
     def page(name: str) -> Callable[[], FileResponse]:
         def _serve() -> FileResponse:
-            return FileResponse(WEB_DIR / name, headers={"Cache-Control": "no-cache"})
+            return archivo_web(WEB_DIR / name, headers={"Cache-Control": "no-cache"})
 
         return _serve
 
@@ -246,14 +278,14 @@ def create_app(settings: Settings | None = None, database: Database | None = Non
 
     @app.get("/sw.js", include_in_schema=False)
     def service_worker() -> FileResponse:
-        return FileResponse(WEB_DIR / "sw.js", media_type="application/javascript",
-                            headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
+        return archivo_web(WEB_DIR / "sw.js", media_type="application/javascript",
+                           headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
 
     @app.get("/manifest.webmanifest", include_in_schema=False)
     def manifest() -> FileResponse:
-        return FileResponse(WEB_DIR / "manifest.webmanifest", media_type="application/manifest+json")
+        return archivo_web(WEB_DIR / "manifest.webmanifest", media_type="application/manifest+json")
 
-    app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
+    app.mount("/static", EstaticosWeb(directory=WEB_DIR), name="static")
     return app
 
 
