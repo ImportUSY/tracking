@@ -12,7 +12,7 @@
   const PERM = new Set(MISPERM.permisos_interfaz && MISPERM.permisos_interfaz.length ? MISPERM.permisos_interfaz : MISPERM.permisos);
   // Página y servidor deben ser de la misma versión. Si no, casi siempre es una ventana vieja del
   // programa que sigue abierta (o una página guardada en caché): se avisa en vez de fallar en silencio.
-  const VERSION_PANEL = "1.26.2";
+  const VERSION_PANEL = "1.28.1";
   const cmpVer = (a, b) => { const x = a.split(".").map(Number), y = b.split(".").map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0); } return 0; };
   const AVISO_VERSION_VIEJA = "El programa que está abierto en esta PC es una versión anterior. Cierre TODAS las ventanas negras de «Tracking Logístico» y abra de nuevo «1 - PROBAR EN MI PC.bat» (o vuelva a publicar en Vercel).";
   api("/api/config").then((c) => {
@@ -880,6 +880,7 @@
 
   async function verFactura(id, alCambiar) {
     const f = await api("/api/facturas/" + id);
+    const CORRIGE = puede("facturas.estatus.corregir");
     const ORIG = { importacion: "Carga REMESA", online: "App conductor", offline: "App conductor (sin señal)", admin: "Corrección manual", captura: "Foto de factura" };
     abrirDialogo(`
       <div class="row between"><h2 style="margin:0" class="mono">${esc(f.numero)}</h2>${badge(f.estatus)}</div>
@@ -895,7 +896,8 @@
         <div><small>Fecha factura</small><div>${esc(fmtFecha(f.fecha_fac)) || "—"}</div></div>
         <div><small>Fecha Preparado</small><div>${esc(fmtMomento(f.fecha_alm)) || "—"}</div></div>
         <div><small>Por Entregar</small><div>${esc(fmtMomento(f.fecha_tra)) || "—"}</div></div>
-        <div><small>Fecha Entregado (Fecha Rec)</small><div>${esc(fmtMomento(f.fecha_rec)) || (f.estatus === "devolucion" ? `No entregada devolución - ${fmtFechaHora(f.estatus_at).replace(",", "")}` : "Por Entregar")}</div></div>
+        <div><small>Fecha Entregado (Fecha Rec)</small><div>${esc(fmtMomento(f.fecha_rec)) || (f.estatus === "devolucion" ? `No entregada devolución - ${fmtFechaHora(f.estatus_at).replace(",", "")}`
+          : f.estatus === "no_entregado" ? `No se entregó - Cliente no Disponible - ${fmtFechaHora(f.estatus_at).replace(",", "")}` : "Por Entregar")}</div></div>
         <div><small>Bultos</small><div>${esc(f.bultos ?? "")}</div></div>
       </div>
       ${f.comentario ? `<div><small>Comentario</small><div>${esc(f.comentario)}</div></div>` : ""}
@@ -910,13 +912,24 @@
         <strong>${esc(ESTATUS[e.estatus])}</strong> · ${esc(fmtMomento(e.ocurrido_at))}
         <small> · ${esc(ORIG[e.origen] || e.origen)}${e.usuario_nombre ? " · " + esc(e.usuario_nombre) : ""}${e.aplicado ? "" : " · llegó tarde, solo historial"}</small>
         ${e.motivo ? `<div><small>${e.estatus === "entregada" && e.origen !== "admin" ? "Observación" : "Motivo"}: ${esc(e.motivo)}</small></div>` : ""}
-        ${e.foto_id ? `<div><img class="thumb" data-foto="${esc(e.foto_id)}" alt="Foto de la factura"></div>` : ""}</li>`).join("")}</ul>
+        ${e.latitud != null && e.longitud != null ? `<div><small><a href="https://www.google.com/maps?q=${encodeURIComponent(`${e.latitud},${e.longitud}`)}" target="_blank" rel="noopener">Ubicación GPS</a>${e.precision_m != null ? ` (±${esc(Math.round(e.precision_m))} m)` : ""}</small></div>` : ""}
+        ${fotosEvento(e).map((x) => `<div class="foto-hito"><img class="thumb" data-foto="${esc(x.id)}" alt="Foto: ${esc(ESTATUS[e.estatus] || e.estatus)}">
+          ${x.capturada_at ? `<div><small class="muted">Foto tomada: ${esc(fmtFechaHora(x.capturada_at))}</small></div>` : ""}</div>`).join("")}</li>`).join("")}
+      ${(f.fotos_sueltas || []).map((id) => `<li><strong>Foto adjunta</strong>
+        <div><img class="thumb" data-foto="${esc(id)}" alt="Foto de la factura"></div></li>`).join("")}</ul>
       ${TL.cuadroTiempos(f.tiempos)}
       </div>
-      ${puede("facturas.estatus.corregir") ? `<h3>Corregir estatus</h3><div class="row">
-        <select id="nuevoEst" style="width:auto">${Object.entries(ESTATUS).map(([k, t]) => `<option value="${k}" ${k === f.estatus ? "selected" : ""}>${t}</option>`).join("")}</select>
-        <input id="motivoAdm" placeholder="Motivo (obligatorio si retrocede)" class="grow" style="flex:1 1 200px">
-        <button type="button" class="small" id="btnEst">Aplicar</button></div>` : ""}
+      ${CORRIGE ? `<h3>Estatus y fotos</h3>
+        <div class="row">
+          <select id="nuevoEst" style="width:auto" aria-label="Estatus">${Object.entries(ESTATUS).map(([k, t]) => `<option value="${k}" ${k === f.estatus ? "selected" : ""}>${t}</option>`).join("")}</select>
+          <input id="motivoAdm" placeholder="Motivo (obligatorio si retrocede)" class="grow" style="flex:1 1 200px" maxlength="1000">
+        </div>
+        <div class="grid" style="margin-top:8px">
+          <div id="fechaBox" class="hidden"><label for="recepcionAt" id="fechaLbl">Fecha y hora de recepción</label><input id="recepcionAt" type="datetime-local"></div>
+          <div id="fotosBox"><label for="fotosEst" id="fotosLbl">Fotos</label><input id="fotosEst" type="file" accept="image/*" multiple>
+            <small id="fotosInfo" class="muted"></small></div>
+        </div>
+        <div class="row" style="margin-top:8px;justify-content:flex-end"><button type="button" class="primary" id="btnEst">Guardar</button></div>` : ""}
       <div id="dlgErr" class="alert err hidden"></div>`, `<button type="submit" class="primary">Cerrar</button>`, null);
     if (CAMBIA_EMPRESA) {
       $("#btnEmpFac").onclick = async () => {
@@ -935,14 +948,97 @@
       api(url, { raw: true }).then((r) => r.blob())
         .then((b) => { img.src = URL.createObjectURL(b); }).catch(() => { img.alt = "Foto no disponible"; });
     }
-    if (puede("facturas.estatus.corregir")) {
-      $("#btnEst").onclick = async () => {
-        try {
-          await api(`/api/facturas/${f.id}/estatus`, { method: "POST", body: { estatus: $("#nuevoEst").value, motivo: $("#motivoAdm").value || null } });
-          toast("Estatus actualizado"); dlg.close(); alCambiar && alCambiar();
-        } catch (e) { $("#dlgErr").textContent = e.message; $("#dlgErr").classList.remove("hidden"); }
-      };
-    }
+    if (!CORRIGE) return;
+    const mostrarError = (e) => { $("#dlgErr").textContent = e.message; $("#dlgErr").classList.remove("hidden"); };
+    // Tras un cambio se vuelve a abrir la ficha: selector, historial y tiempos quedan sincronizados
+    const recargar = () => { alCambiar && alCambiar(); dlg.close(); verFactura(f.id, alCambiar); };
+    // Seleccionar el estatus y adjuntar las fotos en el mismo paso; se guarda todo con «Guardar»
+    const nuevo = () => $("#nuevoEst").value;
+    const cambia = () => nuevo() !== f.estatus;
+    const conFecha = () => cambia() && ["entregada", "no_entregado"].includes(nuevo());
+    const fotoObligatoria = () => cambia() && (nuevo() === "no_entregado" || (nuevo() === "entregada" && !f.tiene_foto));
+    const motivoObligatorio = () => cambia() && (nuevo() === "no_entregado" || ORDEN_EST[nuevo()] < ORDEN_EST[f.estatus]);
+    const sincronizar = () => {
+      $("#fechaBox").classList.toggle("hidden", !conFecha());
+      $("#fechaLbl").textContent = nuevo() === "no_entregado" ? "Fecha y hora de la no entrega" : "Fecha y hora de recepción";
+      if (conFecha() && !$("#recepcionAt").value) $("#recepcionAt").value = fechaHoraLocal(new Date());
+      $("#recepcionAt").max = fechaHoraLocal(new Date());
+      if (f.fecha_tra) $("#recepcionAt").min = fechaHoraLocal(new Date(f.fecha_tra));
+      // Mismo estatus: solo se pueden adjuntar fotos si ese estatus aún no tiene ninguna
+      const fotosVisibles = cambia() || f.adjuntar_foto;
+      $("#fotosBox").classList.toggle("hidden", !fotosVisibles);
+      $("#fotosLbl").textContent = !cambia() ? `Fotos del estatus actual (${ESTATUS[f.estatus]})`
+        : `Fotos ${fotoObligatoria() ? "(obligatoria al menos una)" : "(opcional)"}`;
+      $("#motivoAdm").placeholder = motivoObligatorio() ? "Motivo (obligatorio)" : "Motivo u observación (opcional)";
+      $("#btnEst").textContent = cambia() ? "Guardar" : "Guardar fotos";
+      $("#btnEst").disabled = !cambia() && !f.adjuntar_foto;
+    };
+    $("#nuevoEst").onchange = sincronizar;
+    $("#fotosEst").onchange = () => {
+      const files = [...$("#fotosEst").files];
+      $("#fotosInfo").textContent = files.length
+        ? `${files.length} foto(s) · tomada(s): ${files.map((x) => fmtFechaHora(momentoArchivo(x).toISOString())).join(", ")}` : "";
+    };
+    sincronizar();
+    $("#btnEst").onclick = async () => {
+      const files = [...$("#fotosEst").files];
+      const motivo = $("#motivoAdm").value.trim();
+      $("#btnEst").disabled = true;
+      try {
+        if (!cambia()) {
+          if (!files.length) throw new Error("Elija la foto o cambie el estatus");
+          const ids = [];
+          for (const file of files) ids.push(await subirFotoFactura(f.id, file));
+          await api(`/api/facturas/${f.id}/foto`, { method: "POST", body: { foto_ids: ids } });
+          toast("Fotos guardadas"); recargar();
+          return;
+        }
+        if (motivoObligatorio() && !motivo) throw new Error(nuevo() === "no_entregado" ? "Indique el motivo de la no entrega" : "Indique el motivo para retroceder el estatus");
+        if (fotoObligatoria() && !files.length) throw new Error(nuevo() === "no_entregado" ? "Adjunte la foto de la no entrega" : "Adjunte la foto de la entrega");
+        const body = { estatus: nuevo(), motivo: motivo || null };
+        if (conFecha()) {
+          const valor = $("#recepcionAt").value;
+          if (!valor) throw new Error("Indique la fecha y hora");
+          const cuando = new Date(valor);
+          if (cuando > new Date()) throw new Error("La fecha y hora no puede ser posterior a este momento");
+          body.ocurrido_at = cuando.toISOString();
+        }
+        const ids = [];
+        for (const file of files) ids.push(await subirFotoFactura(f.id, file));
+        if (ids.length) { body.foto_id = ids[0]; body.foto_ids = ids.slice(1); }
+        await api(`/api/facturas/${f.id}/estatus`, { method: "POST", body });
+        toast("Estatus actualizado"); recargar();
+      } catch (e) { mostrarError(e); $("#btnEst").disabled = false; }
+    };
+  }
+
+  const ORDEN_EST = TL.ORDEN;
+  /** Fotos de un evento del historial (todas; las respuestas viejas solo traen foto_id). */
+  function fotosEvento(e) {
+    if (e.fotos && e.fotos.length) return e.fotos;
+    return e.foto_id ? [{ id: e.foto_id, capturada_at: null }] : [];
+  }
+  /** Fecha y hora de la toma: la del archivo (cámara) si no es futura; si no, ahora. */
+  function momentoArchivo(file) {
+    const ahora = Date.now();
+    return new Date(file.lastModified && file.lastModified <= ahora + 60000 ? Math.min(file.lastModified, ahora) : ahora);
+  }
+
+  /** «2026-11-05T14:30» en hora local, para un <input type="datetime-local">. */
+  function fechaHoraLocal(d) {
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
+  async function subirFotoFactura(facturaId, file) {
+    const blob = await TL.comprimirImagen(file, 1600, 0.72);
+    const id = TL.uuid();
+    const fd = new FormData();
+    fd.append("factura_id", String(facturaId));
+    fd.append("capturada_at", momentoArchivo(file).toISOString());
+    fd.append("archivo", blob, id + ".jpg");
+    await api(`/api/fotos/${id}`, { method: "PUT", body: fd });
+    return id;
   }
 
   // ------------------------------------------------------------------ Feriados
@@ -1311,15 +1407,20 @@
       <div class="subtabs" role="tablist">
         <button type="button" role="tab" data-sub="seg" class="active">Auditoría de seguridad</button>
         <button type="button" role="tab" data-sub="bit">Bitácora</button>
+        <button type="button" role="tab" data-sub="dat">Datos de Navegación</button>
       </div>
       <div id="audSub"></div>`;
     const usuarios = await api("/api/admin/usuarios?incluir_conductores=true").catch(() => []);
-    const subs = { seg: () => auditoriaSeguridad($("#audSub"), usuarios), bit: () => bitacora($("#audSub"), usuarios) };
+    const subs = {
+      seg: () => auditoriaSeguridad($("#audSub"), usuarios), bit: () => bitacora($("#audSub"), usuarios),
+      dat: () => datosNavegacion($("#audSub"), usuarios),
+    };
+    const VISTAS_AUD = { seg: "seguridad", bit: "bitacora", dat: "datos-navegacion" };
     v.querySelector(".subtabs").onclick = (e) => {
       const b = e.target.closest("button[data-sub]");
       if (!b) return;
       $$(".subtabs button", v).forEach((x) => x.classList.toggle("active", x === b));
-      TL.registrarVista("auditoria-" + (b.dataset.sub === "bit" ? "bitacora" : "seguridad"), b.textContent);
+      TL.registrarVista("auditoria-" + VISTAS_AUD[b.dataset.sub], b.textContent);
       subs[b.dataset.sub]();
     };
     await subs.seg();
@@ -1407,6 +1508,89 @@
     $("#bitOut").onclick = (e) => { if (e.target.dataset.pag) cargar(Number(e.target.dataset.pag)); };
     await cargar(0);
     await archivoBitacora(() => cargar(0));
+  }
+
+  // Datos de navegación: datos móviles (red celular) que usó la app de cada conductor
+  const AGRUPAR_DATOS = { detalle: "Detalle (conexión, ruta, fecha y hora)", conductor: "Por conductor", dia: "Por fecha",
+    ruta: "Por ruta", conexion: "Por conexión" };
+  function fmtBytes(n) {
+    n = Number(n) || 0;
+    if (n < 1024) return `${n} B`;
+    if (n < 1048576) return `${(n / 1024).toFixed(1)} KB`;
+    if (n < 1073741824) return `${(n / 1048576).toFixed(2)} MB`;
+    return `${(n / 1073741824).toFixed(2)} GB`;
+  }
+  async function datosNavegacion(box, usuarios) {
+    const hoy = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const conductores = usuarios.filter((u) => u.rol === "conductor");
+    box.innerHTML = `<p class="muted">Datos móviles que usó la app de los conductores <strong>solo por red celular</strong> (lo que pasa por Wi-Fi no se mide).
+      Lo mide el teléfono por conexión (cada vez que abre la app), ruta, fecha y hora (de la primera a la última petición). Es una medición de la aplicación: sirve para comparar
+      conductores, rutas y días, no para conciliar la factura del plan de datos. Los teléfonos que no informan el tipo de red (iPhone) no se miden.</p>
+      <form id="datF" class="card stack">
+        <div class="row">
+          <label style="margin:0" for="dDesde">Desde</label><input type="date" id="dDesde" name="desde" value="${hoy}" style="width:auto">
+          <label style="margin:0" for="dHasta">Hasta</label><input type="date" id="dHasta" name="hasta" value="${hoy}" style="width:auto">
+          <select name="agrupar" style="width:auto" aria-label="Agrupar">
+            ${Object.entries(AGRUPAR_DATOS).map(([k, t]) => `<option value="${k}">${esc(t)}</option>`).join("")}</select>
+        </div>
+        <div class="row">
+          <select name="usuario_id" style="width:auto" aria-label="Conductor"><option value="">Todos los conductores</option>
+            ${conductores.map((u) => `<option value="${u.id}">${esc(u.nombre)} (${esc(u.username)})</option>`).join("")}</select>
+          ${EMPRESAS.length ? `<select name="empresa_id" style="width:auto" aria-label="Empresa"><option value="">Todas las empresas</option>
+            ${EMPRESAS.map((e) => `<option value="${e.id}">${esc(e.nombre)}</option>`).join("")}</select>` : ""}
+          <input name="ruta" placeholder="Ruta (ej. /api/conductor)" style="width:200px" aria-label="Ruta">
+          <input name="conexion_id" placeholder="Conexión" style="width:140px" aria-label="Conexión">
+          <input name="q" type="search" placeholder="Usuario o ruta…" style="flex:1 1 160px;width:auto" aria-label="Buscar">
+          <button type="submit" class="primary">Filtrar</button>
+        </div>
+        <small id="dErr" class="lvl-error" role="alert"></small>
+      </form>
+      <div id="datTot" class="grid" style="margin-top:12px"></div>
+      <div id="datOut" class="card table-wrap" style="margin-top:12px"></div>`;
+    const LIM = 50;
+    const cargar = async (offset = 0) => {
+      const fd = new FormData($("#datF"));
+      if (fd.get("desde") && fd.get("hasta") && fd.get("desde") > fd.get("hasta")) { $("#dErr").textContent = "La fecha Desde no puede ser posterior a Hasta."; return; }
+      $("#dErr").textContent = "";
+      const p = new URLSearchParams([...fd].filter(([, x]) => x));
+      p.set("limit", LIM); p.set("offset", offset);
+      const out = $("#datOut");
+      out.innerHTML = '<span class="muted">Cargando…</span>';
+      try {
+        const r = await api("/api/admin/consumo-datos?" + p);
+        const t = r.totales;
+        $("#datTot").innerHTML = [["Total usado", fmtBytes(t.bytes_total)], ["Enviado", fmtBytes(t.bytes_subida)], ["Recibido", fmtBytes(t.bytes_bajada)],
+          ["Solicitudes", t.solicitudes.toLocaleString("es-VE")], ["Conexiones", t.conexiones], ["Conductores", t.conductores]]
+          .map(([k, x]) => `<div class="card"><small>${esc(k)}</small><div><strong>${esc(x)}</strong></div></div>`).join("");
+        const ag = r.agrupar;
+        const quien = (x) => `${esc(x.usuario_nombre || "—")}<div><small class="mono muted">${esc(x.usuario || "")}${x.empresa_nombre ? " · " + esc(x.empresa_nombre) : ""}</small></div>`;
+        // Fecha y hora exactas de la primera y la última petición de la fila
+        const hora = (iso) => new Date(iso).toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        const fechaHora = (x) => {
+          if (!x.desde) return "—";
+          const mismoDia = new Date(x.desde).toDateString() === new Date(x.hasta).toDateString();
+          return `<small>${esc(new Date(x.desde).toLocaleDateString("es-VE"))} ${esc(hora(x.desde))}${x.hasta && x.hasta !== x.desde
+            ? ` – ${mismoDia ? "" : esc(new Date(x.hasta).toLocaleDateString("es-VE")) + " "}${esc(hora(x.hasta))}` : ""}</small>`;
+        };
+        const FH = ["Fecha y hora", fechaHora];
+        const cols = {
+          detalle: [FH, ["Conductor", quien], ["Conexión", (x) => `<small class="mono">${esc((x.conexion_id || "").slice(0, 8))}</small>`],
+            ["Ruta", (x) => `<small class="mono">${esc(x.metodo)} ${esc(x.ruta)}</small>`], ["Red", (x) => esc(x.tipo_efectivo || "—")]],
+          conductor: [["Conductor", quien], FH, ["Conexiones", (x) => esc(x.conexiones)]],
+          dia: [["Fecha", (x) => esc(fmtFecha(x.dia))], FH, ["Conductores", (x) => esc(x.conductores)], ["Conexiones", (x) => esc(x.conexiones)]],
+          ruta: [["Ruta", (x) => `<small class="mono">${esc(x.metodo)} ${esc(x.ruta)}</small>`], FH, ["Conductores", (x) => esc(x.conductores)]],
+          conexion: [["Conexión", (x) => `<small class="mono">${esc((x.conexion_id || "").slice(0, 8))}</small>`], ["Conductor", quien],
+            FH, ["Red", (x) => esc(x.tipo_efectivo || "—")]],
+        }[ag];
+        out.innerHTML = r.items.length ? `<table><tr>${cols.map(([h]) => `<th>${esc(h)}</th>`).join("")}<th>Solicitudes</th><th>Enviado</th><th>Recibido</th><th>Total</th></tr>
+          ${r.items.map((x) => `<tr>${cols.map(([, f]) => `<td>${f(x)}</td>`).join("")}<td>${esc(x.solicitudes)}</td>
+            <td>${esc(fmtBytes(x.bytes_subida))}</td><td>${esc(fmtBytes(x.bytes_bajada))}</td><td><strong>${esc(fmtBytes(x.bytes_total))}</strong></td></tr>`).join("")}</table>
+          ${paginador(r.total, offset, LIM)}` : '<span class="muted">Sin consumo de datos móviles para el filtro indicado.</span>';
+      } catch (ex) { out.innerHTML = `<div class="alert err">${esc(ex.message)}</div>`; }
+    };
+    $("#datF").onsubmit = (e) => { e.preventDefault(); cargar(0); };
+    $("#datOut").onclick = (e) => { if (e.target.dataset.pag) cargar(Number(e.target.dataset.pag)); };
+    await cargar(0);
   }
 
   // Archivo por mes o por año: saca períodos cerrados de la bitácora activa y los guarda comprimidos
@@ -1694,7 +1878,7 @@
       if (DUR.includes(c.clave)) return `<td class="num dur"><strong>${esc(r.resumen.duraciones[c.clave][campo] || "—")}</strong></td>`;
       return "<td></td>";
     }).join("")}</tr>`;
-    const kpis = (s) => `<div class="ind-kpis">${[["Facturas", s.facturas], ["Preparado", s.preparadas], ["Por Entregar", s.por_entregar], ["Entregadas", s.entregadas],
+    const kpis = (s) => `<div class="ind-kpis">${[["Facturas", s.facturas], ["Preparado", s.preparadas], ["Por Entregar", s.por_entregar], ["No Entregado", s.no_entregadas ?? 0], ["Entregadas", s.entregadas],
       ["Devoluciones", s.devoluciones], ["Promedio de entrega (hábil)", s.promedio_entrega || "—"]]
       .map(([t, n]) => `<div class="ind-kpi"><small>${esc(t)}</small><strong>${esc(n)}</strong></div>`).join("")}</div>`;
     // sel: clic en la gráfica (serie y, si fue una barra, la empresa de transporte) → la tabla muestra esas facturas
@@ -1848,7 +2032,7 @@
           .graf.dona{page-break-after:always}</style></head><body>
           <h1>Indicador de Gestión</h1><p>${esc(r.filtro)}</p>
           <p>Generado: ${esc(new Date().toLocaleString("es-VE"))} · Tiempos en ${esc(r.jornada || "días hábiles")}, sin feriados</p>
-          <p>${[["Facturas", k.facturas], ["Entregadas", k.entregadas], ["Por Entregar", k.por_entregar], ["Preparado", k.preparadas], ["Devoluciones", k.devoluciones], ["Promedio de entrega", k.promedio_entrega || "—"]].map(([t, n]) => `<span class="k"><b>${t}:</b> ${esc(n)}</span>`).join("")}</p>
+          <p>${[["Facturas", k.facturas], ["Entregadas", k.entregadas], ["Por Entregar", k.por_entregar], ["No Entregado", k.no_entregadas ?? 0], ["Preparado", k.preparadas], ["Devoluciones", k.devoluciones], ["Promedio de entrega", k.promedio_entrega || "—"]].map(([t, n]) => `<span class="k"><b>${t}:</b> ${esc(n)}</span>`).join("")}</p>
           ${graficas}
           ${r.seleccion ? `<p><b>Facturas de: ${esc(r.seleccion.texto)}</b></p>` : ""}
           ${r.total > r.items.length ? `<p><b>Se imprimen las primeras ${r.items.length} de ${r.total} facturas.</b></p>` : ""}

@@ -9,14 +9,17 @@ from typing import Any, Optional
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
     LargeBinary,
     Numeric,
+    SmallInteger,
     String,
     Text,
     TypeDecorator,
@@ -309,6 +312,9 @@ class Foto(Base):
     # Metadatos de evidencia (PoD): momento de la captura en el dispositivo y, si el binario vive en un
     # object storage externo (S3/GCS/R2), su URL o clave canónica (nunca una URL pre-firmada: caducan).
     capturada_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    # Evento del historial al que pertenece la foto (un estatus puede tener varias fotos). Sin clave
+    # foránea: la foto se sube antes que el evento (sin señal, el evento llega después).
+    evento_id: Mapped[str | None] = mapped_column(String(36), index=True)
     url_externa: Mapped[str | None] = mapped_column(String(1000))
     # Contenido de la imagen cuando STORAGE_BACKEND=db (Vercel no tiene disco persistente).
     datos: Mapped[Optional[builtins.bytes]] = mapped_column(LargeBinary, nullable=True, deferred=True)  # noqa: UP045
@@ -330,6 +336,10 @@ class EventoEstatus(Base):
     foto_id: Mapped[str | None] = mapped_column(ForeignKey("fotos.id", ondelete="SET NULL"))
     # False cuando llegó tarde (offline) y ya existía un cambio posterior: queda en el historial.
     aplicado: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Ubicación GPS del teléfono al registrar el evento (la envía la app del conductor si pudo obtenerla)
+    latitud: Mapped[float | None] = mapped_column(Float)
+    longitud: Mapped[float | None] = mapped_column(Float)
+    precision_m: Mapped[float | None] = mapped_column(Float)
 
     factura: Mapped[Factura] = relationship(back_populates="eventos")
     usuario: Mapped[Usuario | None] = relationship()
@@ -469,3 +479,39 @@ class Feriado(Base):
     nombre: Mapped[str] = mapped_column(String(120))
     nacional: Mapped[bool] = mapped_column(Boolean, default=False)  # cargado de la lista nacional automática
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, nullable=False)
+
+
+class ConsumoDatos(Base):
+    """Datos móviles (red celular) que usó la app del conductor: bytes enviados y recibidos por conexión,
+    método + ruta, día y hora local. Lo mide el teléfono; el tráfico por Wi-Fi no se registra nunca.
+
+    Una fila acumula (el teléfono envía sumas parciales y el servidor las suma a la fila de la misma clave);
+    ``desde`` / ``hasta`` son la fecha y hora exactas de la primera y la última petición de esa fila.
+    Sin claves foráneas, como la bitácora: nombre y empresa son los del momento y sobreviven al usuario.
+    """
+
+    __tablename__ = "consumo_datos"
+    __table_args__ = (
+        UniqueConstraint("usuario_id", "conexion_id", "metodo", "ruta", "dia", "hora", name="uq_consumo_datos_hora"),
+        Index("ix_consumo_datos_dia_usuario", "dia", "usuario_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    dia: Mapped[date] = mapped_column(Date)
+    hora: Mapped[int] = mapped_column(SmallInteger, default=0)  # 0-23, hora local
+    usuario_id: Mapped[int] = mapped_column(Integer)
+    usuario: Mapped[str | None] = mapped_column(String(64))
+    usuario_nombre: Mapped[str | None] = mapped_column(String(160))
+    empresa_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    empresa_nombre: Mapped[str | None] = mapped_column(String(160))
+    conexion_id: Mapped[str] = mapped_column(String(36))
+    tipo_red: Mapped[str] = mapped_column(String(12))  # siempre «cellular»
+    tipo_efectivo: Mapped[str | None] = mapped_column(String(8))  # 4g, 3g, 2g, slow-2g
+    metodo: Mapped[str] = mapped_column(String(8))
+    ruta: Mapped[str] = mapped_column(String(200))
+    solicitudes: Mapped[int] = mapped_column(Integer, default=0)
+    bytes_subida: Mapped[int] = mapped_column(BigInteger, default=0)
+    bytes_bajada: Mapped[int] = mapped_column(BigInteger, default=0)
+    desde: Mapped[datetime] = mapped_column(UTCDateTime())
+    hasta: Mapped[datetime] = mapped_column(UTCDateTime())
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)

@@ -1,19 +1,20 @@
 "use strict";
 (() => {
   const { $, esc, fmtMomento } = TL;
-  const COLORES = { "Preparado": "recibida", "Por Entregar": "en_transito", "Entregada": "entregada", "Devolución": "devolucion" };
+  const COLORES = { "Preparado": "recibida", "Por Entregar": "en_transito", "No Entregado": "no_entregado", "Entregada": "entregada", "Devolución": "devolucion" };
 
   // Proof of Delivery: la API adjunta al hito de cierre (Entregada / Devolución) una URL firmada y
   // temporal. Se muestra igual que en el panel interno: miniatura bajo el evento; al tocarla se abre completa.
+  // Cada hito trae todas sus fotos (h.fotos); las respuestas anteriores solo traían evidencia_url.
   const URL_EVIDENCIA = "/api/publico/evidencias/";
   function fotoHito(h) {
-    const url = h.evidencia_url;
-    if (typeof url !== "string" || !url.startsWith(URL_EVIDENCIA)) return "";
-    return `<div class="evidencia">
-        <a href="${esc(url)}" target="_blank" rel="noopener" title="Ver foto completa">
-          <img class="thumb" src="${esc(url)}" alt="Foto de comprobante: ${esc(h.estatus)}" loading="lazy">
+    const fotos = (h.fotos && h.fotos.length) ? h.fotos : (h.evidencia_url ? [{ url: h.evidencia_url }] : []);
+    return fotos.filter((x) => typeof x.url === "string" && x.url.startsWith(URL_EVIDENCIA)).map((x) => `<div class="evidencia">
+        <a href="${esc(x.url)}" target="_blank" rel="noopener" title="Ver foto completa">
+          <img class="thumb" src="${esc(x.url)}" alt="Foto: ${esc(h.estatus)}" loading="lazy">
         </a>
-      </div>`;
+        ${x.capturada_at ? `<div><small class="muted">Foto tomada: ${esc(TL.fmtFechaHora(x.capturada_at))}</small></div>` : ""}
+      </div>`).join("");
   }
   // Si el enlace vence o la foto no carga, se oculta sin romper la tarjeta
   document.addEventListener("error", (e) => {

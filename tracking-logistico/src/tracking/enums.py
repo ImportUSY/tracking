@@ -14,15 +14,17 @@ class Rol(str, Enum):
 
 
 class Estatus(str, Enum):
-    """Flujo: Preparado → Por Entregar → Entregada | Devolución.
+    """Flujo: Preparado → Por Entregar → (No Entregado) → Entregada | Devolución.
 
     Los valores internos (``recibida``, ``en_transito``) no cambian para no romper los enlaces, los
     reportes ni los cambios que los teléfonos tengan guardados sin señal: solo cambia el nombre visible.
     El antiguo estatus «Cargado» se eliminó (migración 0010).
+    «No Entregado» (cliente no disponible) no es final: la factura sigue pendiente de entrega o devolución.
     """
 
     RECIBIDA = "recibida"  # se muestra como «Preparado»
     EN_TRANSITO = "en_transito"  # se muestra como «Por Entregar»
+    NO_ENTREGADO = "no_entregado"  # «No se entregó - Cliente no Disponible»
     ENTREGADA = "entregada"
     DEVOLUCION = "devolucion"
 
@@ -42,15 +44,18 @@ class Estatus(str, Enum):
 ESTATUS_LABELS: dict[Estatus, str] = {
     Estatus.RECIBIDA: "Preparado",
     Estatus.EN_TRANSITO: "Por Entregar",
+    Estatus.NO_ENTREGADO: "No Entregado",
     Estatus.ENTREGADA: "Entregada",
     Estatus.DEVOLUCION: "Devolución",
 }
+MENSAJE_NO_ENTREGADO = "No se entregó - Cliente no Disponible"
 
 ESTATUS_ORDEN: dict[Estatus, int] = {
     Estatus.RECIBIDA: 0,
     Estatus.EN_TRANSITO: 1,
-    Estatus.ENTREGADA: 2,
-    Estatus.DEVOLUCION: 2,
+    Estatus.NO_ENTREGADO: 2,
+    Estatus.ENTREGADA: 3,
+    Estatus.DEVOLUCION: 3,
 }
 
 # Estatus que ya no existen y a qué estatus vigente equivalen. Un teléfono con la versión anterior
@@ -62,6 +67,7 @@ class TipoEventoOperativo(str, Enum):
     """Eventos del ciclo de transporte que el conductor puede registrar (y nada más)."""
 
     SALIDA = "salida"  # «Por Entregar»
+    NO_ENTREGADO = "no_entregado"  # cliente no disponible
     ENTREGA = "entrega"
     DEVOLUCION = "devolucion"
 
@@ -72,6 +78,7 @@ class TipoEventoOperativo(str, Enum):
 
 EVENTO_A_ESTATUS: dict[TipoEventoOperativo, Estatus] = {
     TipoEventoOperativo.SALIDA: Estatus.EN_TRANSITO,
+    TipoEventoOperativo.NO_ENTREGADO: Estatus.NO_ENTREGADO,
     TipoEventoOperativo.ENTREGA: Estatus.ENTREGADA,
     TipoEventoOperativo.DEVOLUCION: Estatus.DEVOLUCION,
 }

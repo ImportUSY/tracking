@@ -32,7 +32,8 @@ MAX_DETALLE: Final = 4000  # caracteres del JSON guardado
 MAX_TEXTO: Final = 300
 MAX_LISTA: Final = 25
 # Lecturas de soporte que no son actividad del usuario (se piden solas al abrir cualquier pantalla)
-RUTAS_OMITIDAS: Final = frozenset({"/api/config", "/api/me/permisos", "/api/me", "/health"})
+# /api/conductor/consumo: la medición de datos móviles que el teléfono envía sola cada pocos minutos
+RUTAS_OMITIDAS: Final = frozenset({"/api/config", "/api/me/permisos", "/api/me", "/health", "/api/conductor/consumo"})
 CABECERA_AUTOMATICA: Final = "x-sincronizacion"  # el teléfono del conductor sincroniza solo cada minuto
 
 # Acciones POST que modifican algo existente (no crean)

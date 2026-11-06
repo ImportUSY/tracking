@@ -7,8 +7,9 @@ bucket que firme URLs. Se implementa el mismo contrato que una URL pre-firmada d
 
 * Sin sesión: lo abre un vendedor o cliente desde la consulta pública.
 * Caduca (``EVIDENCE_URL_TTL_MINUTES``) y no se puede alterar sin invalidar la firma.
-* Revocable: al servirla se comprueba que la foto siga siendo la evidencia vigente de una factura en
-  estatus de cierre; si Transporte corrige el estatus, el enlace deja de funcionar aunque no haya caducado.
+* Revocable: al servirla se comprueba que la foto siga siendo pública (evidencia vigente de un cierre o
+  foto de un hito del historial que no quedó por delante del estatus actual); si Transporte retrocede el
+  estatus, el enlace de las fotos de ese hito deja de funcionar aunque no haya caducado.
 
 ``FirmadorEvidencias`` es la abstracción (DIP/OCP): para migrar las fotos a S3/GCS basta otra
 implementación que devuelva la URL pre-firmada del proveedor a partir de ``Foto.url_externa``.
@@ -22,7 +23,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Protocol
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from tracking.enums import Estatus
@@ -98,13 +99,39 @@ class ServicioEvidencias:
             capturada_at=foto.capturada_at or foto.created_at,
         )
 
+    def fotos_por_evento(self, factura: Factura) -> dict[str, list[Foto]]:
+        """Fotos públicas de cada hito del historial (id del evento → fotos, en orden de captura).
+
+        Solo de eventos aplicados cuyo estatus no quedó por delante del actual: si Transporte retrocede
+        el estatus (p. ej. Entregada por error → Por Entregar), las fotos de ese cierre dejan de publicarse.
+        """
+        actual = Estatus(factura.estatus).orden
+        eventos = {e.id: e for e in factura.eventos if e.aplicado and Estatus(e.estatus).orden <= actual}
+        principal = {e.foto_id: e.id for e in eventos.values() if e.foto_id}
+        fotos = self.db.scalars(
+            select(Foto).where(Foto.factura_id == factura.id)
+            .order_by(func.coalesce(Foto.capturada_at, Foto.created_at), Foto.id))
+        salida: dict[str, list[Foto]] = {}
+        for foto in fotos:
+            evento_id = foto.evento_id if foto.evento_id in eventos else principal.get(foto.id)
+            if evento_id is not None:
+                salida.setdefault(evento_id, []).append(foto)
+        return salida
+
+    def enlace(self, foto: Foto, ahora: datetime) -> EnlaceFirmado:
+        return self.firmador.firmar(foto, ahora)
+
     def resolver(self, foto_id: str, exp: int, firma: str, ahora: datetime) -> Foto | None:
-        """Foto a servir si la firma es válida y sigue siendo evidencia vigente de un cierre."""
+        """Foto a servir si la firma es válida y sigue siendo pública (evidencia vigente o foto de un hito)."""
         if not self.firmador.verificar(foto_id, exp, firma, ahora):
             return None
-        vigente = self.db.scalar(
-            select(Factura.id).where(Factura.evidencia_foto_id == foto_id, Factura.estatus.in_(FINALES)).limit(1)
-        )
-        if vigente is None:
+        foto = self.db.get(Foto, foto_id)
+        if foto is None:
             return None
-        return self.db.get(Foto, foto_id)
+        factura = self.db.get(Factura, foto.factura_id)
+        if factura is None:
+            return None
+        if self.es_publicable(factura) and factura.evidencia_foto_id == foto_id:
+            return foto
+        publicas = {x.id for fotos in self.fotos_por_evento(factura).values() for x in fotos}
+        return foto if foto_id in publicas else None

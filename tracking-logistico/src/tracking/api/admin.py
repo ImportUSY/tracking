@@ -42,6 +42,7 @@ from tracking.schemas import (
     EstadoCredencialOut,
     FilasExcelIn,
     PaginaBitacora,
+    PaginaConsumo,
     ResultadoClaveOut,
     UsuarioIn,
     UsuarioOut,
@@ -51,7 +52,7 @@ from tracking.schemas import (
     VendedorUpdate,
 )
 from tracking.security import get_db
-from tracking.services import audit
+from tracking.services import audit, consumo_datos
 from tracking.services import bitacora_archivo as archivo_bitacora
 from tracking.services.accounts import ClaveInvalida, DatosInvalidos, ServicioCuentas
 from tracking.services.catalogos import (
@@ -550,6 +551,31 @@ def ver_bitacora(
         archivados = archivados.where(BitacoraArchivo.desde < fin, BitacoraArchivo.hasta > ini)
     return PaginaBitacora(total=int(total), items=[BitacoraOut.model_validate(b) for b in filas],
                           archivados=list(db.scalars(archivados)))
+
+
+# ------------------------------------------------------------------- Datos de navegación
+@router.get("/consumo-datos", response_model=PaginaConsumo)
+def ver_consumo_datos(
+    desde: date | None = None,
+    hasta: date | None = None,
+    usuario_id: int | None = None,
+    empresa_id: int | None = None,
+    ruta: str | None = Query(default=None, max_length=200),
+    conexion_id: str | None = Query(default=None, max_length=36),
+    q: str | None = Query(default=None, max_length=80, description="Texto en usuario, nombre o ruta"),
+    agrupar: str = Query("detalle", description="detalle | conductor | dia | ruta | conexion"),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    _: Usuario = Depends(require_permission(Permiso.AUDITORIA_VER)),
+    db: Session = Depends(get_db),
+) -> PaginaConsumo:
+    """Datos móviles (red celular) que usó la app de los conductores, con los mismos filtros de la bitácora."""
+    filtros = consumo_datos.FiltrosConsumo(desde=desde, hasta=hasta, usuario_id=usuario_id, empresa_id=empresa_id,
+                                           ruta=ruta, conexion_id=conexion_id, q=q)
+    try:
+        return PaginaConsumo.model_validate(consumo_datos.consultar(db, filtros, agrupar, limit, offset))
+    except consumo_datos.FiltroConsumoInvalido as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
 
 
 # --- Archivo de la bitácora (meses o años cerrados) -------------------------------------------------

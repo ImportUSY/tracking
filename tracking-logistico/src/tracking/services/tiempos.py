@@ -17,6 +17,8 @@ Reglas de negocio:
 * **Devolución**: no hubo entrega. Se muestran los mismos tramos que en una entrega, pero el último
   termina en el momento en que se registró la devolución («Fecha Devolución»), con el mensaje
   «No se entregó - Devolución». El total suma los tres tramos.
+* **No Entregado** (cliente no disponible): la entrega sigue pendiente; el último tramo sigue en curso y
+  se muestra el mensaje «No se entregó - Cliente no Disponible».
 * Si falta una fecha intermedia (p. ej. factura vieja sin Fecha Preparado) el tramo queda «sin_dato».
 * «Total para la entrega» = suma aritmética de los tramos (en minutos hábiles).
 """
@@ -29,7 +31,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time
 
 from tracking.config import get_settings
-from tracking.enums import Estatus
+from tracking.enums import MENSAJE_NO_ENTREGADO, Estatus
 from tracking.models import Factura
 from tracking.services.timeutil import local_tz, now_utc, to_local
 
@@ -164,10 +166,13 @@ def dias_entre_procesos(f: Factura, ahora: datetime | None = None, feriados: Seq
             abierto = True
         else:
             tramos.append(Tramo(desde, hasta, inicio, fin, None, None, "pendiente"))
-    return _resumen(tramos, devolucion=devolucion)
+    mensaje = MENSAJE_DEVOLUCION if devolucion else None
+    if f.estatus == Estatus.NO_ENTREGADO.value:
+        mensaje = MENSAJE_NO_ENTREGADO
+    return _resumen(tramos, devolucion=devolucion, mensaje=mensaje)
 
 
-def _resumen(tramos: list[Tramo], devolucion: bool) -> Tiempos:
+def _resumen(tramos: list[Tramo], devolucion: bool, mensaje: str | None = None) -> Tiempos:
     contados = [t.minutos for t in tramos if t.minutos is not None]
     total = sum(contados) if contados else None
     aviso = None
@@ -182,7 +187,7 @@ def _resumen(tramos: list[Tramo], devolucion: bool) -> Tiempos:
         entregada=not devolucion and all(t.estado == "completo" for t in tramos),
         en_curso=any(t.estado == "en_curso" for t in tramos),
         devolucion=devolucion,
-        mensaje=MENSAJE_DEVOLUCION if devolucion else None,
+        mensaje=mensaje,
         aviso=aviso,
         nota=texto_jornada(),
     )

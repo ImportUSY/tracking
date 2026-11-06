@@ -23,7 +23,7 @@ from tracking.services.timeutil import local_day_bounds, to_local, today_local
 from tracking.tenancy import scope_de_sesion
 
 FINALES = (Estatus.ENTREGADA.value, Estatus.DEVOLUCION.value)
-EN_CURSO = (Estatus.EN_TRANSITO.value,)  # Por Entregar
+EN_CURSO = (Estatus.EN_TRANSITO.value, Estatus.NO_ENTREGADO.value)  # Por Entregar y No Entregado
 MAX_DIAS_RANGO = 366
 
 

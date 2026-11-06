@@ -12,8 +12,9 @@
 "use strict";
 const IndicadorGrafica = (() => {
   const URL_CHART = "/static/vendor/chartjs-4.4.7/chart.umd.js";
-  // Colores del gráfico de Excel: azul = Preparado, naranja = Por Entregar, gris = Entregado
-  const COLOR = { recibida: "#4472C4", en_transito: "#ED7D31", entregada: "#A5A5A5", devolucion: "#C0392B" };
+  // Colores del gráfico de Excel: azul = Preparado, naranja = Por Entregar, rojo oscuro = No Entregado, gris = Entregado
+  const COLOR = { recibida: "#4472C4", en_transito: "#ED7D31", no_entregado: "#8B0000", entregada: "#A5A5A5",
+    devolucion: "#C0392B" };
   // Dona: rojo coral, naranja, verde menta… como la imagen de referencia
   const PALETA = ["#EC6168", "#F5A623", "#8ED49A", "#5DA9E9", "#B28DFF", "#FFD166", "#06D6A0", "#F78FB3",
     "#4ECDC4", "#FF8C61", "#9AA5B1", "#C3E88D"];
@@ -78,7 +79,7 @@ const IndicadorGrafica = (() => {
             const largo = x - base;
             const x0 = largo >= necesario ? base + 8 : x + 6;
             const fuera = largo < necesario;
-            texto(ctx, cant, x0, y, "#000", false);
+            texto(ctx, cant, x0, y, fuera ? "#000" : ds.colorCantidad, false);
             texto(ctx, pct, x0 + wC + sep, y, fuera ? "#B8860B" : AMARILLO, !fuera);
             void height;
           } else {
@@ -86,7 +87,7 @@ const IndicadorGrafica = (() => {
             ctx.translate(x, alto >= necesario ? base - 8 : y - 6);  // dentro de la barra, o encima si es baja
             ctx.rotate(-Math.PI / 2);
             const fuera = alto < necesario;
-            texto(ctx, cant, 0, 0, "#000", false);
+            texto(ctx, cant, 0, 0, fuera ? "#000" : ds.colorCantidad, false);
             texto(ctx, pct, wC + sep, 0, fuera ? "#B8860B" : AMARILLO, !fuera);
           }
           ctx.restore();
@@ -115,6 +116,7 @@ const IndicadorGrafica = (() => {
           data: g.empresas.map((x) => x.cantidades[e.clave]),
           pcts: g.empresas.map((x) => x.porcentajes[e.clave]),
           devs: g.empresas.map((x) => (e.clave === "entregada" ? x.devoluciones || 0 : 0)),
+          colorCantidad: e.clave === "no_entregado" ? "#fff" : "#000",  // en la barra oscura el negro no se lee
           backgroundColor: COLOR[e.clave],
           hoverBackgroundColor: COLOR[e.clave],
           borderWidth: 0,

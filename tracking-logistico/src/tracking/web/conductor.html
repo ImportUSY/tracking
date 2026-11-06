@@ -56,12 +56,13 @@
           <label for="foto" id="fotoLabel">Foto de la factura</label>
           <input id="foto" type="file" accept="image/*" capture="environment">
           <small id="fotoAyuda"></small>
-          <div id="prev" class="hidden" style="margin-top:8px"><img id="prevImg" class="thumb" alt="Vista previa"></div>
+          <div id="prev" class="hidden" style="margin-top:8px"><img id="prevImg" class="thumb" alt="Vista previa"><div><small id="prevHora" class="muted"></small></div></div>
         </div>
         <div id="motivoBox">
           <label for="motivo" id="motivoLabel">Motivo (opcional, también puede escribirlo en la factura)</label>
           <textarea id="motivo" maxlength="1000"></textarea>
         </div>
+        <p id="gpsAviso" class="muted hidden" style="margin:0">Al confirmar se guarda la ubicación GPS del teléfono.</p>
         <div id="cierreErr" class="alert err hidden"></div>
       </div>
       <div class="dlg-foot">
@@ -99,6 +100,7 @@
   <script src="/static/common.js"></script>
   <script src="/static/biometria.js"></script>
   <script src="/static/outbox.js"></script>
+  <script src="/static/consumo.js"></script>
   <script src="/static/conductor.js"></script>
 </body>
 </html>

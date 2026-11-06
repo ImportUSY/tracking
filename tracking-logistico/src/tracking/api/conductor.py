@@ -6,7 +6,7 @@ Matriz de acceso del rol CONDUCTOR (ver ``tracking.permissions``):
 |-------------------------------------------|-----------------------------------------|
 | Remesas propias                           | ver (sin montos)                        |
 | Facturas propias                          | ver (sin montos) e historial            |
-| Estatus de facturas propias               | registrar Por Entregar, entrega, devolución |
+| Estatus de facturas propias               | registrar Por Entregar, No Entregado, entrega, devolución |
 | Fotos de facturas propias                 | subir y ver (comprobante)               |
 | Cualquier otro recurso                    | denegado (403) o inexistente (404)      |
 
@@ -26,6 +26,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Reques
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import exists, or_, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from tracking.config import Settings, get_settings
 from tracking.enums import Estatus, OrigenEvento, TipoEventoOperativo
@@ -39,14 +40,17 @@ from tracking.schemas import (
     EventoResultado,
     FacturaConductorDetalleOut,
     FacturaConductorOut,
+    LoteConsumoIn,
     LoteEventosIn,
     LoteEventosOut,
     RemesaConductorDetalleOut,
     RemesaConductorOut,
 )
+from tracking.security import get_db
+from tracking.services import consumo_datos
 from tracking.services.consultas import FINALES, conteos_por_remesa, progreso
 from tracking.services.photos import FotoInvalida, detectar_tipo, validar_id
-from tracking.services.status import EventoRechazado, aplicar_evento, puede_operar_factura
+from tracking.services.status import EventoRechazado, Ubicacion, aplicar_evento, puede_operar_factura
 from tracking.services.timeutil import now_utc
 
 router = APIRouter(prefix="/api", tags=["conductor"])
@@ -201,10 +205,10 @@ def registrar_evento_operativo(
     user: Usuario = Depends(require_permission(Permiso.ESTATUS_OPERATIVO_REGISTRAR)),
     facturas: FacturaRepositorio = Depends(get_facturas),
 ) -> EventoResultado:
-    """Registra un evento del ciclo de transporte: ``salida``, ``entrega`` o ``devolucion``.
+    """Registra un evento del ciclo de transporte: ``salida``, ``no_entregado``, ``entrega`` o ``devolucion``.
 
-    El conductor no envía el estatus: lo determina el tipo de evento (Salida→Por Entregar,
-    Entrega→Entregada, Devolución→Devolución). Ningún otro campo se modifica.
+    El conductor no envía el estatus: lo determina el tipo de evento (Salida→Por Entregar, No
+    entregado→No Entregado, Entrega→Entregada, Devolución→Devolución). Ningún otro campo se modifica.
     """
     _mi_factura(facturas, user, factura_id)
     ev = EventoIn(
@@ -215,8 +219,17 @@ def registrar_evento_operativo(
         motivo=body.motivo,
         foto_id=body.foto_id,
         offline=body.offline,
+        latitud=body.latitud,
+        longitud=body.longitud,
+        precision_m=body.precision_m,
     )
     return _procesar_evento(facturas, user, ev)
+
+
+def _ubicacion(ev: EventoIn) -> Ubicacion | None:
+    if ev.latitud is None or ev.longitud is None:
+        return None
+    return Ubicacion(ev.latitud, ev.longitud, ev.precision_m)
 
 
 def _procesar_evento(facturas: FacturaRepositorio, user: Usuario, ev: EventoIn) -> EventoResultado:
@@ -237,6 +250,7 @@ def _procesar_evento(facturas: FacturaRepositorio, user: Usuario, ev: EventoIn) 
             ocurrido_at=ev.ocurrido_at,
             motivo=ev.motivo,
             foto_id=ev.foto_id.lower() if ev.foto_id else None,
+            ubicacion=_ubicacion(ev),
         )
         db.commit()
     except EventoRechazado as exc:
@@ -291,6 +305,18 @@ def registrar_eventos(
     _conductor_id(user)
     resultados = [_procesar_evento(facturas, user, ev) for ev in body.eventos]
     return LoteEventosOut(resultados=resultados, servidor_at=now_utc())
+
+
+@router.post("/conductor/consumo")
+def registrar_consumo(
+    body: LoteConsumoIn,
+    user: Usuario = Depends(require_permission(Permiso.ESTATUS_OPERATIVO_REGISTRAR)),
+    db: Session = Depends(get_db),
+) -> dict[str, int]:
+    """Datos móviles (solo red celular) que midió la app del conductor. No se anota en la bitácora."""
+    _conductor_id(user)
+    registros = [consumo_datos.RegistroConsumo(**r.model_dump()) for r in body.registros]
+    return {"registros": consumo_datos.registrar(db, user, registros)}
 
 
 @router.put("/fotos/{foto_id}", status_code=status.HTTP_201_CREATED)

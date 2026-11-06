@@ -499,6 +499,62 @@ lectura, salvo su clave y la vista previa de correos.
 * Solución: páginas, `sw.js`, manifiesto y `/static/*` llevan un `ETag` calculado sobre el **contenido**
   (`archivo_web` y `EstaticosWeb` en `main.py`) y sin `Last-Modified`. Prueba: `tests/test_etag_estaticos.py`.
 
+## 4t. «No Entregado», foto y fecha de recepción desde el panel y Datos de Navegación (v1.27.0)
+
+* **Ingreso**: el subtítulo ahora es «Seguimiento de Pedidos para Clientes».
+* **Estatus «No Entregado»** (`no_entregado`, migración `0015`): va entre Por Entregar y Entregada en los
+  selectores y el historial. Cuadro de tiempos: «No se entregó - Cliente no Disponible» (el último tramo sigue
+  en curso). En reportes aparece normal; en la gráfica del Indicador se suma a Por Entregar y tiene su propio
+  KPI. En la app del conductor sigue en Pendientes, se ve como Por Entregar (con el aviso del intento anterior)
+  y conserva los botones Entregada y Devolución.
+* **App del conductor**: mantener oprimido **Entregada** (~0,6 s) → «No Entregado - Cliente No Disponible».
+  Abre la ventana de cierre con **foto obligatoria** y el botón **Confirmar Estatus**; al confirmar se guarda la
+  ubicación GPS del teléfono (latitud, longitud y precisión en `eventos_estatus`). Si el GPS no responde,
+  pregunta si guarda sin ubicación. El historial del panel muestra el enlace «Ubicación GPS» (Google Maps).
+  `Permissions-Policy` ahora permite `geolocation=(self)`.
+* **Panel (Transportista / Supervisor)**:
+  * «Adjuntar foto» en facturas Por Entregar o Entregada **sin fotos** (`POST /api/facturas/{id}/foto`): la
+    foto queda en el evento del estatus actual (se ve en el historial) y, si está Entregada, es la evidencia.
+  * Corregir a **Entregada** pide la **fecha y hora de recepción** (no futura ni anterior a la Fecha Por
+    Entregar) y la **foto** (obligatoria si la factura no tiene ninguna). Esa fecha es la Fecha Entregado.
+    Al aplicar, la ficha se vuelve a abrir: selector, historial y tiempos quedan sincronizados.
+* **Auditoría → Datos de Navegación** (después de Bitácora): datos **móviles** que usó la app de cada
+  conductor, con filtros Desde/Hasta, conductor, empresa, ruta, conexión y búsqueda, agrupado por detalle,
+  conductor, fecha, ruta o conexión. Lo mide `web/consumo.js` en el teléfono **solo cuando la red es celular**
+  (`navigator.connection.type`; por Wi-Fi no mide nada; iPhone no informa el tipo de red y no se mide).
+  Recibido = tamaño transferido (Resource Timing); enviado = cuerpo + estimación de cabeceras. Se envía cada
+  5 min a `POST /api/conductor/consumo` (no se anota en la bitácora) y se acumula en `consumo_datos`.
+  Es una medición de la aplicación, no el contador del operador.
+
+## 4u. Botón «No Entregado», fotos por estatus y Datos de Navegación por hora (v1.28.0)
+
+* **App del conductor (Pendientes)**: se quitó el «mantener oprimido» de Entregada. Las facturas No Entregado
+  muestran el aviso púrpura «⚠ Intento anterior: No se entregó - Cliente no Disponible» (más grande y
+  parpadeando). Cada factura tiene tres botones: **Entregada** (verde), **Devolución** (rojo) y
+  **No Entregado** (añil), que abre la ventana con foto obligatoria, GPS y «Confirmar Estatus».
+* **Hora de la foto**: cada foto guarda la fecha y hora en que se tomó (`fotos.capturada_at`, a partir de la
+  fecha del archivo del teléfono; si no es confiable, la hora de subida). La vista previa la muestra
+  («Foto tomada: …») y el historial también.
+* **Fotos por estatus** (migración `0016`, `fotos.evento_id`): un estatus puede tener **varias fotos** y todas
+  quedan ligadas a su evento del historial (las antiguas se ligaron solas). El historial del panel muestra las
+  fotos de cada estatus con su hora.
+* **Panel → «Estatus y fotos»** (Transportista / Supervisor): en un solo paso se elige el estatus final, se
+  adjuntan fotos (varias) y se pulsa **Guardar**.
+  * Pasar a **No Entregado** exige **motivo** y foto.
+  * Pasar a **Entregada** exige fecha y hora de recepción, y foto si la factura no tiene ninguna.
+  * Sin cambiar el estatus, se pueden adjuntar fotos al estatus actual (Por Entregar, No Entregado o
+    Entregada) mientras no tenga fotos (`POST /api/facturas/{id}/foto` con `foto_ids`).
+* **«¿Dónde está mi pedido?»** (`/tracking`): cada hito del historial muestra sus fotos con la hora en que se
+  tomaron (enlaces firmados y temporales). Si se corrige el estatus hacia atrás, las fotos de los estatus
+  posteriores dejan de verse (y los enlaces dejan de servir).
+* **Datos de Navegación**: cada registro se guarda por **fecha y hora** (`consumo_datos.hora`) y la tabla
+  muestra la columna «Fecha y hora» (primera y última petición). Los filtros y métricas no cambian.
+* **Indicador de Gestión**: No Entregado tiene su **propia barra (rojo oscuro)**, entre Por Entregar y
+  Entregado, con cantidad y porcentaje, leyenda, desglose por empresa emisora (dona) y clic que filtra la
+  tabla, igual que las otras barras. Por Entregar ya no incluye las No Entregado.
+* **v1.28.1**: el aviso «Intento anterior: No se entregó…» de la app del conductor tiene las letras en
+  amarillo sobre fondo morado oscuro (se lee igual con el tema claro u oscuro).
+
 ## 5. Pruebas y calidad
 
 ```bash

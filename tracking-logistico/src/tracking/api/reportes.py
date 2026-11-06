@@ -226,7 +226,8 @@ def _filtros_indicador(
     zona: str | None = Query(default=None, max_length=160, description="Destino de la remesa"),
     empresa_id: int | None = None,
     serie: str | None = Query(default=None, max_length=20,
-                              description="Clic en la gráfica: recibida | en_transito | entregada (con devoluciones)"),
+                              description="Clic en la gráfica: recibida | en_transito | no_entregado | "
+                                          "entregada (con devoluciones)"),
     transporte: str | None = Query(default=None, max_length=160,
                                    description="Clic en una barra: empresa de transporte"),
 ) -> FiltrosIndicador:

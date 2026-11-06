@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tracking-logistico"
-version = "1.26.2"
+version = "1.28.1"
 description = "Seguimiento de facturas desde Transporte hasta la entrega o devolución al cliente."
 readme = "README.md"
 requires-python = ">=3.10"

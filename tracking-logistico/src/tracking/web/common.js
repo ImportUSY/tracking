@@ -8,11 +8,13 @@ const TL = (() => {
   const ESTATUS = {
     recibida: "Preparado",
     en_transito: "Por Entregar",
+    no_entregado: "No Entregado",
     entregada: "Entregada",
     devolucion: "Devolución",
   };
   // «Cargado» ya no existe (v1.17.0). Se conservan los números: 3 = final, < 2 = aún puede pasar a Por Entregar.
-  const ORDEN = { recibida: 0, en_transito: 2, entregada: 3, devolucion: 3 };
+  // No Entregado (2.5): la mercancía salió pero sigue pendiente de entregar.
+  const ORDEN = { recibida: 0, en_transito: 2, no_entregado: 2.5, entregada: 3, devolucion: 3 };
 
   function store(key, value) {
     try {

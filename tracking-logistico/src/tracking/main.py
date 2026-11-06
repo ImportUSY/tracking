@@ -178,7 +178,7 @@ def create_app(settings: Settings | None = None, database: Database | None = Non
         response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
         response.headers["Referrer-Policy"] = "same-origin"
         response.headers["Content-Security-Policy"] = CSP
-        response.headers["Permissions-Policy"] = "camera=(self), geolocation=()"
+        response.headers["Permissions-Policy"] = "camera=(self), geolocation=(self)"
         if request.url.path.startswith("/static/vendor/") and response.status_code == 200:
             # Lector de facturas (rutas con versión): una semana en la caché del navegador
             response.headers["Cache-Control"] = "public, max-age=604800"

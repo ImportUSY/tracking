@@ -104,11 +104,12 @@ def test_indicador_de_gestion(client: TestClient, sup: dict[str, str]) -> None:
     g = r["grafica"]
     assert g["titulo"] == "Indicador de Gestión"
     assert [(x["clave"], x["titulo"]) for x in g["estatus"]] == [
-        ("recibida", "Preparado"), ("en_transito", "Por Entregar"), ("entregada", "Entregado")]
+        ("recibida", "Preparado"), ("en_transito", "Por Entregar"), ("no_entregado", "No Entregado"),
+        ("entregada", "Entregado")]
     assert [x["nombre"] for x in g["empresas"]] == ["TRANSPORTES DEMO"]
     barra = g["empresas"][0]
     assert barra["total"] == 5 and barra["devoluciones"] == 1
-    assert barra["cantidades"] == {"recibida": 3, "en_transito": 0, "entregada": 2}
+    assert barra["cantidades"] == {"recibida": 3, "en_transito": 0, "no_entregado": 0, "entregada": 2}
     assert barra["porcentajes"]["recibida"] == 60.0 and barra["porcentajes"]["entregada"] == 40.0
     assert {x["empresa"]: x["facturas"] for x in g["desglose"]["entregada"]["*"]} == {"IMPORTADORA USY": 2}
     assert "devolucion" not in g["desglose"] and r["jornada"] == "Días hábiles: de lunes a viernes de 7:00 a 16:00"

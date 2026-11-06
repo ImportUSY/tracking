@@ -34,6 +34,7 @@ GRIS = PatternFill("solid", fgColor="D9D9D9")
 AZUL = PatternFill("solid", fgColor="DDEBF7")
 FILL_ESTATUS = {
     Estatus.ENTREGADA.value: PatternFill("solid", fgColor="C6EFCE"),
+    Estatus.NO_ENTREGADO.value: PatternFill("solid", fgColor="FFE699"),
     Estatus.DEVOLUCION.value: PatternFill("solid", fgColor="FFC7CE"),
 }
 FILL_EN_CURSO = PatternFill("solid", fgColor="FFEB9C")

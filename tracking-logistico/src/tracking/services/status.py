@@ -2,16 +2,17 @@
 
 Reglas (decisiones documentadas para los TBD del PRD):
 
-* Flujo: Preparado -> Por Entregar -> Entregada | Devolución (valores internos ``recibida`` y
-  ``en_transito``). Se permite saltar pasos hacia adelante (p.ej. Preparado -> Entregada).
-  El estatus «Cargado» ya no existe.
+* Flujo: Preparado -> Por Entregar -> (No Entregado) -> Entregada | Devolución (valores internos
+  ``recibida`` y ``en_transito``). Se permite saltar pasos hacia adelante (p.ej. Preparado -> Entregada).
+  El estatus «Cargado» ya no existe. «No Entregado» (cliente no disponible) no cierra la factura.
 * Todo evento queda en el historial con la hora en que ocurrió (dispositivo) y la hora en que llegó.
 * Un evento que *avanza* la factura siempre se aplica, aunque llegue tarde desde el modo sin señal.
 * Un evento que no avanza:
     - si es más antiguo que el estatus vigente -> se guarda en el historial sin aplicarse;
     - si es más reciente: entre Entregada y Devolución gana el último cambio (regla del PRD);
       un retroceso (p.ej. Entregada -> Por Entregar) solo lo puede hacer Supervisor/Transportista.
-* Devolución exige una foto previamente subida para esa factura.
+* Devolución y No Entregado (desde la app) exigen una foto previamente subida para esa factura.
+* La app puede enviar la ubicación GPS del teléfono al registrar el evento: queda en el historial.
 * El número de tracking nace al salir de Preparado.
 * El id del evento lo genera el dispositivo (UUID): reenviarlo no duplica nada.
 * Proof of Delivery: al aplicarse un estatus de cierre (Entregada / Devolución) con foto, la foto
@@ -54,15 +55,24 @@ class ResultadoEvento:
     duplicado: bool
 
 
-def _normalizar_ocurrido(ocurrido_at: datetime | None, ahora: datetime) -> datetime:
+@dataclass(frozen=True)
+class Ubicacion:
+    latitud: float
+    longitud: float
+    precision_m: float | None = None
+
+
+def _normalizar_ocurrido(ocurrido_at: datetime | None, ahora: datetime, es_admin: bool = False) -> datetime:
     if ocurrido_at is None:
         return ahora
     if ocurrido_at.tzinfo is None:
         # El dispositivo envía ISO con zona; si no la trae asumimos UTC.
         ocurrido_at = ocurrido_at.replace(tzinfo=timezone.utc)
     if ocurrido_at > ahora + MAX_CLOCK_SKEW:
+        if es_admin:
+            raise EventoRechazado("invalido", "La fecha y hora no puede ser posterior a este momento")
         return ahora  # reloj del teléfono adelantado
-    if ocurrido_at < ahora - MAX_OFFLINE_AGE:
+    if ocurrido_at < ahora - MAX_OFFLINE_AGE and not es_admin:
         raise EventoRechazado("invalido", "El cambio es demasiado antiguo para sincronizarse")
     return ocurrido_at
 
@@ -117,7 +127,7 @@ def _actualizar_fechas_etapa(factura: Factura, nuevo: Estatus, cuando: datetime,
         factura.fecha_tra = None
     elif nuevo == Estatus.EN_TRANSITO:
         factura.fecha_tra = cuando
-    else:  # Entregada / Devolución
+    else:  # No Entregado / Entregada / Devolución: la mercancía salió
         factura.fecha_tra = factura.fecha_tra or cuando
     factura.fecha_rec = cuando if nuevo == Estatus.ENTREGADA else None
 
@@ -133,8 +143,13 @@ def aplicar_evento(
     ocurrido_at: datetime | None = None,
     motivo: str | None = None,
     foto_id: str | None = None,
+    ubicacion: Ubicacion | None = None,
 ) -> ResultadoEvento:
-    """Aplica un cambio de estatus. No hace commit (el llamador controla la transacción)."""
+    """Aplica un cambio de estatus. No hace commit (el llamador controla la transacción).
+
+    Corrección desde el panel (origen admin): sin ``ocurrido_at`` el cambio ocurre ahora; con él (p. ej.
+    la fecha y hora de recepción de una entrega) se usa ese momento, que no puede ser futuro.
+    """
     existente = db.get(EventoEstatus, evento_id)
     if existente is not None:
         if existente.factura_id != factura.id:
@@ -145,14 +160,16 @@ def aplicar_evento(
         raise EventoRechazado("sin_permiso", "Esta factura no está asignada a usted")
 
     ahora = now_utc()
-    cuando = _normalizar_ocurrido(ocurrido_at, ahora)
-    actual = Estatus(factura.estatus)
     es_admin = origen == OrigenEvento.ADMIN
+    cuando = _normalizar_ocurrido(ocurrido_at, ahora, es_admin)
+    actual = Estatus(factura.estatus)
+    momento = cuando if (not es_admin or ocurrido_at is not None) else ahora
 
     if not es_admin and nuevo not in ESTATUS_OPERATIVOS:
         # El conductor solo registra eventos operativos: Por Entregar, entrega, devolución
         raise EventoRechazado("invalido", f"El conductor no puede asignar el estatus «{nuevo.label}»")
 
+    foto: Foto | None = None
     if foto_id is not None:
         foto = db.get(Foto, foto_id)
         if foto is None:
@@ -161,6 +178,8 @@ def aplicar_evento(
             raise EventoRechazado("invalido", "La foto pertenece a otra factura")
     if nuevo == Estatus.DEVOLUCION and foto_id is None and not es_admin:
         raise EventoRechazado("invalido", "La devolución requiere foto de la factura con el motivo")
+    if nuevo == Estatus.NO_ENTREGADO and foto_id is None and not es_admin:
+        raise EventoRechazado("invalido", "«No Entregado» requiere una foto de evidencia")
 
     if es_admin:
         if nuevo.orden < actual.orden and not (motivo and motivo.strip()):
@@ -193,13 +212,18 @@ def aplicar_evento(
         motivo=(motivo or "").strip() or None,
         foto_id=foto_id,
         aplicado=aplicar,
+        latitud=ubicacion.latitud if ubicacion else None,
+        longitud=ubicacion.longitud if ubicacion else None,
+        precision_m=ubicacion.precision_m if ubicacion else None,
     )
     db.add(evento)
+    if foto is not None and foto.evento_id is None:
+        foto.evento_id = evento_id
 
-    _actualizar_fechas_etapa(factura, nuevo, cuando if not es_admin else ahora, aplicar)
+    _actualizar_fechas_etapa(factura, nuevo, momento, aplicar)
     if aplicar:
         factura.estatus = nuevo.value
-        factura.estatus_at = cuando if not es_admin else ahora
+        factura.estatus_at = momento
         factura.version = (factura.version or 0) + 1
         _actualizar_evidencia(factura, nuevo, foto_id, cuando)
         _actualizar_observacion(factura, nuevo, (motivo or "").strip() or None)

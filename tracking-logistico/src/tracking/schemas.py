@@ -249,6 +249,71 @@ class PaginaBitacora(BaseModel):
     archivados: list[str] = Field(default_factory=list, description="Períodos archivados que cruzan el filtro")
 
 
+# --------------------------------------------------------------------- Datos de navegación (consumo móvil)
+class ConsumoRegistroIn(BaseModel):
+    """Suma parcial medida por el teléfono (solo red celular) para una conexión, método + ruta y día."""
+
+    dia: date
+    hora: int | None = Field(default=None, ge=0, le=23, description="Hora local; si falta, la de «desde»")
+    conexion_id: str = Field(min_length=8, max_length=36, pattern=r"^[0-9A-Za-z-]+$")
+    metodo: str = Field(min_length=3, max_length=8, pattern=r"^[A-Za-z]+$")
+    ruta: str = Field(min_length=1, max_length=500)
+    tipo_efectivo: str | None = Field(default=None, max_length=8)
+    solicitudes: int = Field(ge=0, le=100_000)
+    bytes_subida: int = Field(ge=0, le=2_000_000_000)
+    bytes_bajada: int = Field(ge=0, le=2_000_000_000)
+    desde: datetime
+    hasta: datetime
+
+    @field_validator("ruta")
+    @classmethod
+    def _ruta(cls, v: str) -> str:
+        if not v.startswith("/"):
+            raise ValueError("La ruta debe empezar con /")
+        return v
+
+
+class LoteConsumoIn(BaseModel):
+    registros: list[ConsumoRegistroIn] = Field(max_length=300)
+
+
+class ConsumoFilaOut(BaseModel):
+    dia: date | None = None
+    hora: int | None = None
+    usuario_id: int | None = None
+    usuario: str | None = None
+    usuario_nombre: str | None = None
+    empresa_nombre: str | None = None
+    conexion_id: str | None = None
+    metodo: str | None = None
+    ruta: str | None = None
+    tipo_efectivo: str | None = None
+    conexiones: int = 0
+    conductores: int = 0
+    solicitudes: int = 0
+    bytes_subida: int = 0
+    bytes_bajada: int = 0
+    bytes_total: int = 0
+    desde: datetime | None = None
+    hasta: datetime | None = None
+
+
+class TotalesConsumoOut(BaseModel):
+    solicitudes: int
+    bytes_subida: int
+    bytes_bajada: int
+    bytes_total: int
+    conexiones: int
+    conductores: int
+
+
+class PaginaConsumo(BaseModel):
+    agrupar: str
+    total: int
+    items: list[ConsumoFilaOut]
+    totales: TotalesConsumoOut
+
+
 class ArchivarBitacoraIn(BaseModel):
     tipo: Literal["mes", "anio"]
     periodo: str = Field(min_length=4, max_length=7, description="AAAA-MM para un mes, AAAA para un año")
@@ -495,7 +560,15 @@ class ResultadoCapturaOut(BaseModel):
 
 
 # ----------------------------------------------------------------- Estatus
-class EventoIn(BaseModel):
+class UbicacionIn(BaseModel):
+    """Coordenadas GPS del teléfono (opcionales: si el teléfono no pudo obtenerlas no se envían)."""
+
+    latitud: float | None = Field(default=None, ge=-90, le=90)
+    longitud: float | None = Field(default=None, ge=-180, le=180)
+    precision_m: float | None = Field(default=None, ge=0, le=100000)
+
+
+class EventoIn(UbicacionIn):
     id: str = Field(min_length=8, max_length=36, description="UUID generado en el dispositivo")
     factura_id: int
     estatus: Estatus
@@ -511,7 +584,7 @@ class EventoIn(BaseModel):
         return ESTATUS_RETIRADOS.get(v, v) if isinstance(v, str) else v
 
 
-class EventoOperativoIn(BaseModel):
+class EventoOperativoIn(UbicacionIn):
     """Cuerpo de POST /api/conductor/facturas/{id}/{tipo}: el estatus lo determina el tipo de evento."""
 
     id: str = Field(min_length=8, max_length=36, description="UUID generado en el dispositivo")
@@ -546,6 +619,26 @@ class LoteEventosOut(BaseModel):
 class CambioEstatusAdminIn(BaseModel):
     estatus: Estatus
     motivo: str | None = Field(default=None, max_length=1000)
+    ocurrido_at: datetime | None = Field(
+        default=None, description="Fecha y hora de recepción (obligatoria al pasar a Entregada)")
+    foto_id: str | None = Field(default=None, max_length=36, description="Foto ya subida con PUT /api/fotos/{id}")
+    foto_ids: list[str] = Field(default_factory=list, max_length=10,
+                                description="Fotos adicionales del mismo cambio (ya subidas)")
+
+
+class AdjuntarFotoIn(BaseModel):
+    foto_id: str | None = Field(default=None, min_length=8, max_length=36,
+                                description="Foto ya subida con PUT /api/fotos/{id}")
+    foto_ids: list[str] = Field(default_factory=list, max_length=10, description="Varias fotos ya subidas")
+
+    def todas(self) -> list[str]:
+        ids = ([self.foto_id] if self.foto_id else []) + self.foto_ids
+        return list(dict.fromkeys(x.lower() for x in ids))
+
+
+class FotoEventoOut(BaseModel):
+    id: str
+    capturada_at: datetime | None = Field(default=None, description="Fecha y hora en que se tomó la foto")
 
 
 class ReasignarRemesaIn(BaseModel):
@@ -574,6 +667,10 @@ class EventoOut(ORM):
     foto_id: str | None
     aplicado: bool
     usuario_nombre: str | None = None
+    latitud: float | None = None
+    longitud: float | None = None
+    precision_m: float | None = None
+    fotos: list[FotoEventoOut] = Field(default_factory=list, description="Todas las fotos de este estatus")
 
 
 class FacturaConductorOut(ORM):
@@ -703,6 +800,11 @@ class FacturaDetalleOut(FacturaOut):
     eventos: list[EventoOut] = Field(default_factory=list)
     tiempos: TiemposProcesoOut | None = None
     captura_id: str | None = Field(default=None, description="Foto original de la factura, si se dio de alta por foto")
+    tiene_foto: bool = Field(default=False, description="La factura ya tiene alguna foto de entrega o evidencia")
+    fotos_sueltas: list[str] = Field(
+        default_factory=list, description="Fotos de la factura que no están ligadas a un evento del historial")
+    adjuntar_foto: bool = Field(
+        default=False, description="El estatus actual (Por Entregar, No Entregado o Entregada) aún no tiene foto")
     habilitada_reingreso: bool = Field(default=False, description="Devuelta y aún sin reingresar en otra remesa")
     reingreso_de: CicloFacturaOut | None = None
     reingresos: list[CicloFacturaOut] = Field(default_factory=list)
@@ -751,6 +853,12 @@ class Pagina(BaseModel):
 
 
 # ---------------------------------------------------------- Consulta pública
+class FotoPublicaOut(BaseModel):
+    url: str
+    expira_at: datetime
+    capturada_at: datetime | None = None
+
+
 class HitoPublico(BaseModel):
     estatus: str
     fecha: datetime
@@ -760,6 +868,7 @@ class HitoPublico(BaseModel):
     evidencia_url: str | None = None
     evidencia_expira_at: datetime | None = None
     observacion: str | None = Field(default=None, description="Observación que dejó el conductor al entregar")
+    fotos: list[FotoPublicaOut] = Field(default_factory=list, description="Fotos de este estatus (enlaces temporales)")
 
 
 class EvidenciaPublicaOut(BaseModel):

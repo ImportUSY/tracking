@@ -60,7 +60,7 @@ COLUMNAS: Final[tuple[tuple[str, str, str], ...]] = (
     ("empresa_transporte", "Empresa de transporte", "texto"),
 )
 # Series de la gráfica: «entregada» agrupa Entregada + Devolución
-SERIES: Final = ("recibida", "en_transito", "entregada")
+SERIES: Final = ("recibida", "en_transito", "no_entregado", "entregada")
 
 
 class FiltroInvalido(ValueError):
@@ -97,7 +97,7 @@ class FiltrosIndicador:
     def descripcion_seleccion(self) -> str | None:
         if not self.serie:
             return None
-        nombre = {"recibida": "Preparado", "en_transito": "Por Entregar",
+        nombre = {"recibida": "Preparado", "en_transito": "Por Entregar", "no_entregado": "No Entregado",
                   "entregada": "Entregado (incluye devoluciones)"}
         return f"{nombre.get(self.serie, self.serie)} · {self.transporte or 'todas las empresas de transporte'}"
 
@@ -165,7 +165,7 @@ def _fila(fa: Factura, vendedores: dict[str, str], ahora: datetime, feriados: Se
     tramos: dict[str, int | None] = {
         k: x.minutos for k, x in zip(("t_preparado", "t_por_entregar", "t_entrega"), t.tramos, strict=True)}
     tramos["t_total"] = t.total_minutos
-    if t.devolucion:
+    if t.mensaje:  # Devolución o No Entregado
         obs = t.mensaje
     elif t.en_curso:
         obs = "En curso (cuenta hasta ahora)"
@@ -226,6 +226,7 @@ def resumen(filas: Sequence[dict[str, Any]]) -> dict[str, Any]:
         "entregadas": len(entregadas),
         "devoluciones": est.count(Estatus.DEVOLUCION.value),
         "por_entregar": est.count(Estatus.EN_TRANSITO.value),
+        "no_entregadas": est.count(Estatus.NO_ENTREGADO.value),
         "preparadas": est.count(Estatus.RECIBIDA.value),
         "duraciones": {k: _estadistica(filas, k) for k in DURACIONES},
         # Promedio de entrega completa (solo Entregadas: Factura → Entregado)
@@ -273,19 +274,22 @@ def _pct(n: int, total: int) -> float:
 
 
 def _serie(estatus: str) -> str:
-    """En la gráfica las devoluciones se suman a Entregado (son facturas cerradas)."""
-    return Estatus.ENTREGADA.value if estatus == Estatus.DEVOLUCION.value else estatus
+    """En la gráfica las devoluciones se suman a Entregado (son facturas cerradas); No Entregado tiene su
+    propia barra."""
+    if estatus == Estatus.DEVOLUCION.value:
+        return Estatus.ENTREGADA.value
+    return estatus
 
 
-SERIES_GRAFICA: Final = (Estatus.RECIBIDA, Estatus.EN_TRANSITO, Estatus.ENTREGADA)
+SERIES_GRAFICA: Final = (Estatus.RECIBIDA, Estatus.EN_TRANSITO, Estatus.NO_ENTREGADO, Estatus.ENTREGADA)
 
 
 def grafica(filas: Sequence[dict[str, Any]]) -> dict[str, Any]:
     """Datos de la gráfica «Indicador de Gestión» (todas las filas del filtro, no solo la página).
 
-    * Barras: una categoría por empresa de transporte (eje X) y tres series: Preparado, Por Entregar y
-      Entregado. **Las devoluciones se suman a Entregado** (``devoluciones`` dice cuántas son). El porcentaje
-      de cada barra es la parte de las facturas de ESA empresa de transporte que está en esa serie.
+    * Barras: una categoría por empresa de transporte (eje X) y cuatro series: Preparado, Por Entregar,
+      No Entregado y Entregado. **Las devoluciones se suman a Entregado** (``devoluciones`` dice cuántas son).
+      El porcentaje de cada barra es la parte de las facturas de ESA empresa de transporte que está en esa serie.
     * Desglose (clic en una barra o en la leyenda): por serie, las empresas emisoras con su cantidad y
       porcentaje; ``"*"`` = todas las empresas de transporte, o el nombre de una en particular.
     """
@@ -349,6 +353,7 @@ _THIN = Side(style="thin")
 _BORDE = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
 _GRIS = PatternFill("solid", fgColor="D9D9D9")
 _FILL = {Estatus.ENTREGADA.value: PatternFill("solid", fgColor="C6EFCE"),
+         Estatus.NO_ENTREGADO.value: PatternFill("solid", fgColor="FFE699"),
          Estatus.DEVOLUCION.value: PatternFill("solid", fgColor="FFC7CE")}
 _ANCHOS: Final[dict[str, float]] = {
     "numero": 16, "cliente": 34, "estatus": 13, "fecha_fac": 13, "estatus_at": 17, "t_preparado": 20,

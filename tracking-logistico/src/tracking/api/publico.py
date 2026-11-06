@@ -1,14 +1,16 @@
 """Consulta pública de tracking (vendedores y clientes, sin usuario ni clave).
 
-Expone estatus, fechas, tiempos entre procesos y datos generales; nunca montos, cédulas ni teléfonos. Cuando el estatus
-vigente es de cierre (Entregada / Devolución) incluye la **evidencia fotográfica (PoD)** como enlace
-pre-firmado y temporal (``tracking.services.evidencias``): no se publica el id interno de la foto ni
-un enlace permanente. ``PUBLIC_EVIDENCE_ENABLED=false`` vuelve al comportamiento sin fotos.
+Expone estatus, fechas, tiempos entre procesos y datos generales; nunca montos, cédulas ni teléfonos. Cada hito
+del historial trae **sus fotos** (Por Entregar, No Entregado, Entregada, Devolución…) y, cuando el estatus vigente
+es de cierre, la **evidencia fotográfica (PoD)**, siempre como enlaces pre-firmados y temporales
+(``tracking.services.evidencias``): no se publica el id interno de la foto ni un enlace permanente.
+``PUBLIC_EVIDENCE_ENABLED=false`` vuelve al comportamiento sin fotos.
 """
 
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, RedirectResponse, Response
@@ -17,10 +19,11 @@ from sqlalchemy.orm import Session, selectinload
 
 from tracking.config import Settings, get_settings
 from tracking.enums import Estatus, OrigenEvento
-from tracking.models import ConsultaPublica, Factura
+from tracking.models import ConsultaPublica, EventoEstatus, Factura
 from tracking.schemas import (
     ConsultaPublicaOut,
     EvidenciaPublicaOut,
+    FotoPublicaOut,
     HitoPublico,
     TiemposProcesoOut,
     TrackingPublicoOut,
@@ -86,6 +89,8 @@ def consultar(
     for f in facturas:
         evidencia = evidencias.para_factura(f, ahora) if settings.public_evidence_enabled else None
         historial = _historial(f, evidencia)
+        if settings.public_evidence_enabled:
+            _fotos_de_hitos(f, historial, evidencias, ahora)
         resultados.append(
             TrackingPublicoOut(
                 numero=f.numero,
@@ -108,13 +113,26 @@ def consultar(
 _ORIGEN_CONDUCTOR = (OrigenEvento.ONLINE.value, OrigenEvento.OFFLINE.value)
 
 
+def _eventos_aplicados(f: Factura) -> list[EventoEstatus]:
+    return [e for e in sorted(f.eventos, key=lambda e: (e.ocurrido_at, e.recibido_at)) if e.aplicado]
+
+
+def _fotos_de_hitos(f: Factura, historial: list[HitoPublico], evidencias: ServicioEvidencias,
+                    ahora: datetime) -> None:
+    """Cada hito lleva todas sus fotos (enlaces firmados y temporales, como la evidencia PoD)."""
+    por_evento = evidencias.fotos_por_evento(f)
+    for e, hito in zip(_eventos_aplicados(f), historial, strict=True):
+        for foto in por_evento.get(e.id, []):
+            enlace = evidencias.enlace(foto, ahora)
+            hito.fotos.append(FotoPublicaOut(url=enlace.url, expira_at=enlace.expira_at,
+                                             capturada_at=foto.capturada_at or foto.created_at))
+
+
 def _historial(f: Factura, evidencia: EvidenciaPublicaOut | None) -> list[HitoPublico]:
     """Hitos aplicados en orden; la foto PoD vigente se adjunta al hito que la registró (como en el panel)."""
     hitos: list[HitoPublico] = []
     hito_evidencia: HitoPublico | None = None
-    for e in sorted(f.eventos, key=lambda e: (e.ocurrido_at, e.recibido_at)):
-        if not e.aplicado:
-            continue
+    for e in _eventos_aplicados(f):
         hito = HitoPublico(estatus=Estatus(e.estatus).label, fecha=e.ocurrido_at, con_evidencia=e.foto_id is not None)
         if e.estatus == Estatus.ENTREGADA.value and e.motivo and e.origen in _ORIGEN_CONDUCTOR:
             hito.observacion = e.motivo  # la nota de la entrega del conductor (no las correcciones internas)

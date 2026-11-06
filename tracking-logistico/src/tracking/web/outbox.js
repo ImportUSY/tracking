@@ -81,8 +81,8 @@ const Outbox = (() => {
   const removeEvent = (id) => del("outbox", id);
   const updateEvent = (item) => put("outbox", item);
 
-  async function saveFoto(uid, id, facturaId, blob) {
-    await put("fotos", { id, uid, factura_id: facturaId, blob, subida: false, creado: new Date().toISOString() });
+  async function saveFoto(uid, id, facturaId, blob, capturada = null) {
+    await put("fotos", { id, uid, factura_id: facturaId, blob, subida: false, creado: capturada || new Date().toISOString() });
   }
   const fotos = (uid) => byUid("fotos", uid);
   const getFoto = (id) => get("fotos", id);
@@ -155,6 +155,7 @@ const Sync = (() => {
         eventos: lote.map((e) => ({
           id: e.id, factura_id: e.factura_id, estatus: e.estatus, ocurrido_at: e.ocurrido_at,
           motivo: e.motivo || null, foto_id: e.foto_id || null, offline: !!e.offline,
+          latitud: e.latitud ?? null, longitud: e.longitud ?? null, precision_m: e.precision_m ?? null,
         })),
       };
       const r = await TL.api("/api/conductor/eventos", { method: "POST", body });

@@ -104,7 +104,8 @@
       <div class="fact ${f.pendiente ? "pending" : ""}">
         <div>${abierta && seleccionable ? `<input type="checkbox" data-sel="${f.id}" aria-label="Seleccionar ${esc(f.numero)}" ${state.sel.has(f.id) ? "checked" : ""}>` : ""}</div>
         <div>
-          <div class="row between"><strong class="mono">${esc(f.numero)}</strong>${badge(f.estatusVista)}</div>
+          <div class="row between"><strong class="mono">${esc(f.numero)}</strong>${badge(f.estatusVista === "no_entregado" ? "en_transito" : f.estatusVista)}</div>
+          ${f.estatusVista === "no_entregado" ? `<div class="alerta-no-entregado" role="status">⚠ Intento anterior: No se entregó - Cliente no Disponible</div>` : ""}
           <div>${esc(f.cliente || "")}</div>
           <small>Pedido ${esc(f.pedido || "-")} · Bultos ${esc(f.bultos ?? "-")}${f.tracking ? ` · <span class="mono">${esc(f.tracking)}</span>` : ""}</small>
           ${f.comentario ? `<div><small>${esc(f.comentario)}</small></div>` : ""}
@@ -114,6 +115,7 @@
         ${abierta ? `<div class="acts">
           <button type="button" class="ok" data-cerrar="entregada" data-id="${f.id}">Entregada</button>
           <button type="button" class="danger" data-cerrar="devolucion" data-id="${f.id}">Devolución</button>
+          <button type="button" class="btn-no-entregado" data-cerrar="no_entregado" data-id="${f.id}">No Entregado</button>
         </div>` : ""}
       </div>`;
   }
@@ -172,23 +174,48 @@
     if (!f) return;
     cierre = { id, tipo, numero: f.numero };
     const dev = tipo === "devolucion";
-    $("#cierreTitulo").textContent = dev ? "Registrar devolución" : "Registrar entrega";
+    const noEnt = tipo === "no_entregado";
+    $("#cierreTitulo").textContent = dev ? "Registrar devolución" : noEnt ? "No Entregado - Cliente No Disponible" : "Registrar entrega";
     $("#cierreInfo").textContent = `${f.numero} · ${f.cliente || ""}`;
-    $("#fotoLabel").textContent = dev ? "Foto de la factura con el motivo (obligatoria)" : "¿Desea tomar foto de la factura firmada? (opcional)";
-    $("#fotoAyuda").textContent = dev ? "Escriba el motivo en la factura antes de tomar la foto." : "Puede confirmar sin foto.";
-    // Entregada: observación/notificación de la entrega (quién recibió, faltantes…). Devolución: motivo.
+    $("#fotoLabel").textContent = dev ? "Foto de la factura con el motivo (obligatoria)"
+      : noEnt ? "Foto del lugar de entrega (obligatoria)" : "¿Desea tomar foto de la factura firmada? (opcional)";
+    $("#fotoAyuda").textContent = dev ? "Escriba el motivo en la factura antes de tomar la foto."
+      : noEnt ? "Tome la foto que demuestre que el cliente no estaba disponible (local cerrado, portón…)." : "Puede confirmar sin foto.";
+    // Entregada: observación/notificación de la entrega (quién recibió, faltantes…). Devolución / No Entregado: motivo.
     $("#motivoLabel").textContent = dev ? "Motivo (opcional, también puede escribirlo en la factura)"
-      : "Observación de la entrega (opcional): quién recibió, faltantes, novedades…";
-    $("#motivo").placeholder = dev ? "" : "Ej.: Recibido por Juan Pérez, conforme";
+      : noEnt ? "Observación (opcional)" : "Observación de la entrega (opcional): quién recibió, faltantes, novedades…";
+    $("#motivo").placeholder = dev ? "" : noEnt ? "Ej.: Local cerrado, nadie atendió" : "Ej.: Recibido por Juan Pérez, conforme";
     $("#foto").value = ""; $("#motivo").value = "";
     $("#prev").classList.add("hidden");
     $("#cierreErr").classList.add("hidden");
-    $("#cierreOk").className = dev ? "danger" : "ok";
-    $("#cierreOk").textContent = dev ? "Confirmar devolución" : "Confirmar entrega";
+    $("#gpsAviso").classList.toggle("hidden", !noEnt);
+    $("#cierreOk").className = dev ? "danger" : noEnt ? "btn-no-entregado" : "ok";
+    $("#cierreOk").textContent = dev ? "Confirmar devolución" : noEnt ? "Confirmar Estatus" : "Confirmar entrega";
     $("#dlgCierre").showModal();
   }
 
+  // Ubicación GPS del teléfono. null si no hay permiso, no hay GPS o tarda demasiado.
+  function obtenerUbicacion() {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) { resolve(null); return; }
+      navigator.geolocation.getCurrentPosition(
+        (p) => resolve({
+          latitud: p.coords.latitude, longitud: p.coords.longitude,
+          precision_m: Number.isFinite(p.coords.accuracy) ? Math.round(p.coords.accuracy) : null,
+        }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+      );
+    });
+  }
+
   const comprimir = (file) => TL.comprimirImagen(file, 1600, 0.72);
+  // Fecha y hora de la toma: la del archivo de la cámara (si es de hoy y no es futura); si no, ahora
+  function momentoFoto(file) {
+    const ahora = Date.now();
+    const t = file && file.lastModified;
+    return new Date(t && t <= ahora + 60000 && ahora - t < 24 * 3600 * 1000 ? Math.min(t, ahora) : ahora);
+  }
 
   async function confirmarCierre(ev) {
     ev.preventDefault();
@@ -197,20 +224,32 @@
     if (cierre.tipo === "devolucion" && !file) {
       err.textContent = "La devolución requiere la foto de la factura."; err.classList.remove("hidden"); return;
     }
+    if (cierre.tipo === "no_entregado" && !file) {
+      err.textContent = "«No Entregado» requiere una foto."; err.classList.remove("hidden"); return;
+    }
     $("#cierreOk").disabled = true;
     try {
+      let ubicacion = null;
+      if (cierre.tipo === "no_entregado") {
+        $("#cierreOk").textContent = "Obteniendo ubicación…";
+        ubicacion = await obtenerUbicacion();
+        $("#cierreOk").textContent = "Confirmar Estatus";
+        if (!ubicacion && !confirm("No se pudo obtener la ubicación GPS (revise que el GPS esté encendido y que la app tenga permiso). ¿Guardar el estatus sin ubicación?")) {
+          return;
+        }
+      }
       let fotoId = null;
       if (file) {
         const blob = await comprimir(file);
         if (blob.size > maxFotoMb * 1024 * 1024) throw new Error(`La foto supera ${maxFotoMb} MB`);
         fotoId = uuid();
-        await Outbox.saveFoto(me.id, fotoId, cierre.id, blob);
+        await Outbox.saveFoto(me.id, fotoId, cierre.id, blob, momentoFoto(file).toISOString());
       }
-      await encolar(cierre.id, cierre.tipo, { foto_id: fotoId, motivo: $("#motivo").value.trim() || null });
+      await encolar(cierre.id, cierre.tipo, Object.assign({ foto_id: fotoId, motivo: $("#motivo").value.trim() || null }, ubicacion || {}));
       $("#dlgCierre").close();
       state.sel.delete(cierre.id);
       await refreshLocal();
-      toast(cierre.tipo === "devolucion" ? "Devolución registrada" : "Entrega registrada");
+      toast({ devolucion: "Devolución registrada", no_entregado: "Registrada como No Entregado" }[cierre.tipo] || "Entrega registrada");
       Sync.run();
     } catch (e) {
       err.textContent = e.message; err.classList.remove("hidden");
@@ -255,6 +294,7 @@
     const f = $("#foto").files[0];
     if (!f) { $("#prev").classList.add("hidden"); return; }
     $("#prevImg").src = URL.createObjectURL(f);
+    $("#prevHora").textContent = "Foto tomada: " + TL.fmtFechaHora(momentoFoto(f).toISOString());
     $("#prev").classList.remove("hidden");
   });
 

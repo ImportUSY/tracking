@@ -9,7 +9,7 @@ responde 404, igual que uno inexistente.
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import Exists, case, exists, func, or_, select
@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, aliased, selectinload
 
 from tracking.config import Settings, get_settings
 from tracking.enums import Estatus, OrigenEvento
-from tracking.models import CapturaFactura, EventoEstatus, Factura, Remesa, Usuario
+from tracking.models import CapturaFactura, EventoEstatus, Factura, Foto, Remesa, Usuario
 from tracking.permissions import (
     Permiso,
     puede_ver_datos_personales,
@@ -34,6 +34,7 @@ from tracking.repositories import (
     get_remesas,
 )
 from tracking.schemas import (
+    AdjuntarFotoIn,
     CambiarEmpresaTransporteIn,
     CambioEmpresaTransporteOut,
     CambioEstatusAdminIn,
@@ -41,6 +42,7 @@ from tracking.schemas import (
     EventoOut,
     FacturaDetalleOut,
     FacturaOut,
+    FotoEventoOut,
     Pagina,
     ReasignarRemesaIn,
     RemesaDetalleOut,
@@ -52,7 +54,7 @@ from tracking.services.empresa_transporte import CambioEmpresaInvalido, cambiar_
 from tracking.services.feriados import fechas as fechas_feriados
 from tracking.services.status import EventoRechazado, aplicar_evento
 from tracking.services.tiempos import dias_entre_procesos
-from tracking.services.timeutil import local_day_bounds
+from tracking.services.timeutil import local_day_bounds, to_local
 from tracking.services.tracking_codes import normalize_query
 
 router = APIRouter(prefix="/api", tags=["remesas"])
@@ -343,12 +345,29 @@ def detalle_factura(
     # DÍAS TRANSCURRIDOS ENTRE PROCESOS (Factura → Preparado → Por Entregar → Entregado)
     tiempos = dias_entre_procesos(f, feriados=fechas_feriados(facturas.db))
     out.tiempos = TiemposProcesoOut.model_validate(tiempos, from_attributes=True)
-    eventos = []
+    fotos = facturas.db.execute(
+        select(Foto.id, Foto.evento_id, func.coalesce(Foto.capturada_at, Foto.created_at))
+        .where(Foto.factura_id == f.id).order_by(func.coalesce(Foto.capturada_at, Foto.created_at), Foto.id)
+    ).all()
+    momento = {fid: cuando for fid, _, cuando in fotos}
+    eventos, ligadas = [], set()
     for e in sorted(f.eventos, key=lambda e: (e.ocurrido_at, e.recibido_at)):
         eo = EventoOut.model_validate(e)
         eo.usuario_nombre = e.usuario.nombre if e.usuario else None
+        # Todas las fotos de este estatus: la principal (foto_id) y las demás ligadas al evento
+        ids = [fid for fid, ev, _ in fotos if ev == e.id]
+        if e.foto_id and e.foto_id not in ids and e.foto_id in momento:
+            ids.insert(0, e.foto_id)
+        eo.fotos = [FotoEventoOut(id=x, capturada_at=momento[x]) for x in ids]
+        ligadas.update(ids)
         eventos.append(eo)
     out.eventos = eventos
+    out.tiene_foto = bool(fotos)
+    out.fotos_sueltas = [fid for fid, _, _ in fotos if fid not in ligadas]
+    vigente = _evento_vigente(f)
+    out.adjuntar_foto = f.estatus in ESTATUS_ADJUNTAR_FOTO and not (
+        (vigente is not None and _fotos_del_evento(facturas.db, vigente))
+        or (vigente is None and f.evidencia_foto_id))
     out.captura_id = facturas.db.scalar(
         select(CapturaFactura.id).where(CapturaFactura.factura_id == f.id).limit(1)
     )
@@ -377,24 +396,117 @@ def cambiar_estatus_admin(
     user: Usuario = Depends(require_permission(Permiso.FACTURAS_CORREGIR_ESTATUS)),
     facturas: FacturaRepositorio = Depends(get_facturas),
 ) -> FacturaOut:
-    """Corrección manual de estatus (queda en el historial como origen 'admin')."""
+    """Corrección manual de estatus (queda en el historial como origen 'admin').
+
+    * **Entregada**: exige la fecha y hora de recepción (``ocurrido_at``) y, si la factura no tiene
+      ninguna foto, la foto de la entrega.
+    * **No Entregado**: exige el **motivo** y la foto (de la que se guarda la fecha y hora de la toma).
+    * ``foto_id`` + ``foto_ids``: fotos ya subidas con PUT /api/fotos/{id}; todas quedan en el evento.
+    """
     db = facturas.db
     f = facturas.obtener(factura_id, bloquear=True)
     if f is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Factura no encontrada")
+    ids = list(dict.fromkeys(x.lower() for x in ([body.foto_id] if body.foto_id else []) + body.foto_ids))
+    fotos = _fotos_de_la_factura(db, f, ids)
+    cambia = body.estatus.value != f.estatus
+    if cambia and body.estatus == Estatus.NO_ENTREGADO:
+        if not (body.motivo and body.motivo.strip()):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Indique el motivo de la no entrega")
+        if not ids:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Adjunte la foto de la no entrega")
+    if cambia and body.estatus == Estatus.ENTREGADA:
+        if body.ocurrido_at is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                "Indique la fecha y hora de recepción de la entrega")
+        if not ids and not _tiene_foto(db, f.id):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                "Adjunte la foto de la entrega (la factura no tiene ninguna foto)")
+    if cambia and body.ocurrido_at is not None and body.estatus in (Estatus.ENTREGADA, Estatus.NO_ENTREGADO):
+        cuando = body.ocurrido_at if body.ocurrido_at.tzinfo else body.ocurrido_at.replace(tzinfo=timezone.utc)
+        if f.fecha_tra is not None and cuando < f.fecha_tra:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                "La fecha y hora no puede ser anterior a la Fecha Por Entregar "
+                                f"({to_local(f.fecha_tra):%d/%m/%Y %H:%M})")
     try:
-        aplicar_evento(
+        res = aplicar_evento(
             db,
             evento_id=str(uuid.uuid4()),
             factura=f,
             nuevo=body.estatus,
             usuario=user,
             origen=OrigenEvento.ADMIN,
+            ocurrido_at=body.ocurrido_at,
             motivo=body.motivo,
+            foto_id=ids[0] if ids else None,
         )
     except EventoRechazado as exc:
         db.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT, exc.mensaje) from exc
+    for foto in fotos[1:]:
+        foto.evento_id = foto.evento_id or res.evento.id
+    db.commit()
+    db.refresh(f)
+    return _factura_out(f, user)
+
+
+def _tiene_foto(db: Session, factura_id: int) -> bool:
+    return db.scalar(select(exists().where(Foto.factura_id == factura_id))) is True
+
+
+def _fotos_de_la_factura(db: Session, f: Factura, ids: list[str]) -> list[Foto]:
+    fotos = [db.get(Foto, x) for x in ids]
+    if any(x is None or x.factura_id != f.id for x in fotos):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Foto no encontrada: súbala primero")
+    return [x for x in fotos if x is not None]
+
+
+def _evento_vigente(f: Factura) -> EventoEstatus | None:
+    """Evento aplicado que dejó la factura en su estatus actual."""
+    return max((e for e in f.eventos if e.aplicado and e.estatus == f.estatus),
+               key=lambda e: (e.ocurrido_at, e.recibido_at), default=None)
+
+
+def _fotos_del_evento(db: Session, e: EventoEstatus) -> bool:
+    return e.foto_id is not None or db.scalar(select(exists().where(Foto.evento_id == e.id))) is True
+
+
+ESTATUS_ADJUNTAR_FOTO = (Estatus.EN_TRANSITO.value, Estatus.NO_ENTREGADO.value, Estatus.ENTREGADA.value)
+
+
+@router.post("/facturas/{factura_id}/foto", response_model=FacturaOut)
+def adjuntar_foto(
+    factura_id: int,
+    body: AdjuntarFotoIn,
+    user: Usuario = Depends(require_permission(Permiso.FACTURAS_CORREGIR_ESTATUS)),
+    facturas: FacturaRepositorio = Depends(get_facturas),
+) -> FacturaOut:
+    """Adjunta fotos (ya subidas con PUT /api/fotos/{id}) al estatus actual cuando aún no tiene foto.
+
+    Vale para Por Entregar, No Entregado y Entregada. Las fotos quedan en el evento que dejó la factura en
+    su estatus actual (se ven en el historial) y, si está Entregada, la primera es la evidencia de la entrega.
+    """
+    db = facturas.db
+    f = facturas.obtener(factura_id, bloquear=True)
+    if f is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Factura no encontrada")
+    if f.estatus not in ESTATUS_ADJUNTAR_FOTO:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Solo se adjuntan fotos a facturas Por Entregar, No Entregado o Entregada")
+    ids = body.todas()
+    if not ids:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Elija al menos una foto")
+    fotos = _fotos_de_la_factura(db, f, ids)
+    vigente = _evento_vigente(f)
+    if (vigente is not None and _fotos_del_evento(db, vigente)) or (vigente is None and f.evidencia_foto_id):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Este estatus ya tiene foto")
+    if vigente is not None:
+        vigente.foto_id = ids[0]
+        for foto in fotos:
+            foto.evento_id = vigente.id
+    if f.estatus == Estatus.ENTREGADA.value:
+        f.evidencia_foto_id, f.evidencia_at = ids[0], f.estatus_at
+    f.version = (f.version or 0) + 1
     db.commit()
     db.refresh(f)
     return _factura_out(f, user)

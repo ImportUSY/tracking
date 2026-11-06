@@ -67,7 +67,7 @@ def test_regla_de_fechas_por_etapa() -> None:
 
 
 def test_estatus_cargado_eliminado() -> None:
-    assert [e.label for e in Estatus] == ["Preparado", "Por Entregar", "Entregada", "Devolución"]
+    assert [e.label for e in Estatus] == ["Preparado", "Por Entregar", "No Entregado", "Entregada", "Devolución"]
     assert "cargado" not in {e.value for e in Estatus}
 
 

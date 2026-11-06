@@ -11,6 +11,7 @@
   --warn: #9a6700;
   --s-recibida: #6b7280;
   --s-en_transito: #0b5cad;
+  --s-no_entregado: #b35c00;
   --s-entregada: #1a7f37;
   --s-devolucion: #b42318;
   --radius: 10px;
@@ -22,7 +23,7 @@
     --bg: #0f141a; --surface: #18202a; --text: #e6edf3; --muted: #9aa7b4; --border: #2a3542;
     --primary: #4c9be8; --primary-ink: #0b1220; --danger: #f47067; --ok: #57ab5a; --warn: #d4a72c;
     --s-recibida: #9aa7b4; --s-en_transito: #4c9be8; --s-entregada: #57ab5a;
-    --s-devolucion: #f47067;
+    --s-devolucion: #f47067; --s-no_entregado: #e0823d;
     color-scheme: dark;
   }
 }
@@ -66,7 +67,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .78rem; font-weight: 700; color: #fff; white-space: nowrap; }
 .s-recibida { background: var(--s-recibida); }
 .s-en_transito { background: var(--s-en_transito); } .s-entregada { background: var(--s-entregada); }
-.s-devolucion { background: var(--s-devolucion); }
+.s-devolucion { background: var(--s-devolucion); } .s-no_entregado { background: var(--s-no_entregado); }
 .lvl-error { color: var(--danger); font-weight: 700; } .lvl-advertencia { color: var(--warn); font-weight: 700; } .lvl-info { color: var(--muted); }
 .alert { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); }
 .alert.err { border-color: var(--danger); color: var(--danger); }
@@ -102,6 +103,14 @@ dialog .dlg-foot { padding: 12px 16px; border-top: 1px solid var(--border); disp
 .fact + .fact { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px; }
 .fact .acts { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
 .fact .acts button { flex: 1 1 120px; }
+/* No Entregado: botón añil y aviso parpadeante en Pendientes del conductor */
+button.btn-no-entregado { background: #3f3dbd; border-color: #3f3dbd; color: #fff; }
+.alerta-no-entregado {
+  margin: 6px 0; padding: 8px 10px; border: 2px solid #7b3fbf; border-radius: 8px;
+  background: #3a1d63; color: #ffd600; font-size: 1.02rem; font-weight: 800;
+  animation: parpadeo-no-entregado 1.1s ease-in-out infinite;
+}
+@keyframes parpadeo-no-entregado { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
 .actionbar { position: sticky; bottom: 0; background: var(--surface); border-top: 1px solid var(--border); padding: 10px 16px; display: flex; gap: 8px; z-index: 5; }
 .actionbar button { flex: 1; }
 .sync { font-size: .85rem; }
