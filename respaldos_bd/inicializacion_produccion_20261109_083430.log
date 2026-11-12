@@ -1,0 +1,59 @@
+[2026-11-09 08:34:30] Base de datos: PRODUCCIÓN · PostgreSQL ep-ancient-silence-b7o081wn.c-13.us-east-1.aws.neon.tech/neondb
+[2026-11-09 08:34:30] Conectando a Neon…
+[2026-11-09 08:34:54] Neon no respondió (intento 1 de 1). Reintento en 2 s…
+[2026-11-09 08:34:56] El puerto de Postgres (5432) no responde desde esta red. El sitio publicado sí entra. Se continúa por HTTPS, que es el camino que esta red deja pasar.
+[2026-11-09 08:34:56] Base de datos: PRODUCCIÓN por HTTPS · PostgreSQL ep-ancient-silence-b7o081wn-pooler.c-13.us-east-1.aws.neon.tech/neondb
+[2026-11-09 08:34:58] Situación actual:
+                                       Antes   Después
+  [SE VACÍA]
+  Remesas                                 83          
+  Facturas                              1207          
+  Historial de estatus                  1398          
+  Fotos                                   58          
+  Capturas de facturas (foto)             17          
+  Cargas de Excel                          6          
+  Conductores                              7          
+  Usuarios Conductor                       7          
+  Usuarios Transportista                   2          
+  Camiones                                 0          
+  Empresas de transporte                   3          
+  Vendedores                              86          
+  Auditoría de seguridad                  39          
+  Bitácora                              2295          
+  Bitácora archivada                       0          
+  Consultas públicas                      71          
+  Datos de Navegación                     66          
+  [SE CONSERVA]
+  Feriados                                97          
+  Usuarios Supervisor                      1          
+  Usuarios Cobranzas                       1          
+  Usuarios Consultor                       3          
+[2026-11-09 08:35:13] Respaldo por HTTPS (5449 filas, sin el binario de las fotos): C:\Desarrollo\Tracking - Octubre\respaldos_bd\produccion_20261109_083430.jsonl.gz
+[2026-11-09 08:35:13] Vaciando la base (una sola transacción; si algo no cuadra, Neon la deshace)…
+[2026-11-09 08:35:14] Respaldo: produccion_20261109_083430.jsonl.gz
+[2026-11-09 08:35:14] Resultado:
+                                       Antes   Después
+  [SE VACÍA]
+  Remesas                                 83         0
+  Facturas                              1207         0
+  Historial de estatus                  1398         0
+  Fotos                                   58         0
+  Capturas de facturas (foto)             17         0
+  Cargas de Excel                          6         0
+  Conductores                              7         0
+  Usuarios Conductor                       7         0
+  Usuarios Transportista                   2         0
+  Camiones                                 0         0
+  Empresas de transporte                   3         0
+  Vendedores                              86         0
+  Auditoría de seguridad                  39         1
+  Bitácora                              2295         0
+  Bitácora archivada                       0         0
+  Consultas públicas                      71         0
+  Datos de Navegación                     66         0
+  [SE CONSERVA]
+  Feriados                                97        97
+  Usuarios Supervisor                      1         1
+  Usuarios Cobranzas                       1         1
+  Usuarios Consultor                       3         3
+[2026-11-09 08:35:14] BASE INICIALIZADA CORRECTAMENTE.

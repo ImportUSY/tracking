@@ -2,11 +2,12 @@
 REM ============================================================================
 REM  Tracking Logistico - Inicializacion y limpieza de la base de datos
 REM
-REM  VACIA:    remesas, facturas (historial, fotos, capturas, cargas de Excel),
-REM            conductores (y sus usuarios), camiones, auditoria, bitacora y
-REM            consultas publicas.
-REM  CONSERVA: empresas, vendedores, feriados y usuarios de oficina
-REM            (supervisor, transportista, cobranzas y consultor).
+REM  VACIA (quedan en cero): remesas, facturas (historial, fotos, capturas,
+REM            cargas de Excel), conductores y sus usuarios, transportistas,
+REM            camiones, empresas, vendedores, auditoria, bitacora, consultas
+REM            publicas y Datos de Navegacion.
+REM  CONSERVA: feriados y los usuarios de rol Supervisor, Cobranzas y Consultor
+REM            (claves y huella). Se les quita la empresa, porque esas se vacian.
 REM
 REM  Antes de borrar guarda un respaldo completo en  respaldos_bd\  (junto a
 REM  este archivo). Todo ocurre en una sola transaccion y se valida antes de
@@ -14,6 +15,7 @@ REM  confirmar: si algo no cuadra, se deshace y no se borra nada.
 REM
 REM  USO
 REM    Doble clic ....................................... menu interactivo
+REM    4 - INICIALIZAR BASE DE DATOS.bat ................ mismo menu
 REM    Inicializar_BD_Tracking.bat local --si ........... local, desatendido
 REM    Inicializar_BD_Tracking.bat produccion --si ...... Neon/Vercel, desatendido
 REM    Inicializar_BD_Tracking.bat local --simular ...... prueba sin cambiar nada
@@ -47,7 +49,7 @@ if not defined PY (
   where python >nul 2>nul && set "PY=python"
 )
 if not defined PY (
-  echo No se encontro Python. Ejecute primero scripts\probar_local.bat para crear el entorno.
+  echo No se encontro Python. Ejecute primero "1 - PROBAR EN MI PC.bat" para crear el entorno.
   if "%~1"=="" pause
   exit /b 1
 )
@@ -70,8 +72,9 @@ cls
 echo ==============================================================
 echo   TRACKING LOGISTICO - INICIALIZAR BASE DE DATOS
 echo ==============================================================
-echo   Se VACIAN: remesas, facturas, conductores, camiones e historial
-echo   Se CONSERVAN: empresas, vendedores, feriados y usuarios de oficina
+echo   Se VACIAN: remesas, facturas, conductores, transportistas,
+echo              camiones, empresas, vendedores e historial
+echo   Se CONSERVAN: feriados y usuarios Supervisor, Cobranzas y Consultor
 echo.
 echo   1. Simular en LOCAL        (muestra lo que haria, no cambia nada)
 echo   2. Inicializar LOCAL       (data\tracking.db)
@@ -79,7 +82,9 @@ echo   3. Simular en PRODUCCION   (no cambia nada)
 echo   4. Inicializar PRODUCCION  (base Neon que usa Vercel)
 echo   0. Salir
 echo.
-echo   Para la base LOCAL cierre antes la ventana de probar_local.bat.
+echo   Antes de inicializar LOCAL cierre "1 - PROBAR EN MI PC.bat".
+echo   Antes de inicializar PRODUCCION publique la version final
+echo   (2 - PUBLICAR EN VERCEL.bat) y tenga internet.
 echo.
 set "OP="
 set "ARGS="

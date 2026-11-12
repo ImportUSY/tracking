@@ -62,7 +62,7 @@ from tracking.services.catalogos import (
     importar_vendedores,
 )
 from tracking.services.normalize import clean_code, clean_phone
-from tracking.services.reportes import validar_rango
+from tracking.services.reportes import RangoInvalido, validar_rango
 from tracking.services.timeutil import local_day_bounds
 from tracking.services.users import ConflictoDatos
 from tracking.tenancy import ROLES_AISLADOS, TODAS_LAS_EMPRESAS, TenantScope
@@ -564,7 +564,7 @@ def ver_consumo_datos(
     conexion_id: str | None = Query(default=None, max_length=36),
     q: str | None = Query(default=None, max_length=80, description="Texto en usuario, nombre o ruta"),
     agrupar: str = Query("detalle", description="detalle | conductor | dia | ruta | conexion"),
-    limit: int = Query(50, ge=1, le=500),
+    limit: int = Query(50, ge=1, le=5000, description="Hasta 5000 (para imprimir)"),
     offset: int = Query(0, ge=0),
     _: Usuario = Depends(require_permission(Permiso.AUDITORIA_VER)),
     db: Session = Depends(get_db),
@@ -574,8 +574,36 @@ def ver_consumo_datos(
                                            ruta=ruta, conexion_id=conexion_id, q=q)
     try:
         return PaginaConsumo.model_validate(consumo_datos.consultar(db, filtros, agrupar, limit, offset))
-    except consumo_datos.FiltroConsumoInvalido as exc:
+    except (consumo_datos.FiltroConsumoInvalido, RangoInvalido) as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+
+@router.get("/consumo-datos.xlsx")
+def descargar_consumo_datos(
+    desde: date | None = None,
+    hasta: date | None = None,
+    usuario_id: int | None = None,
+    empresa_id: int | None = None,
+    ruta: str | None = Query(default=None, max_length=200),
+    conexion_id: str | None = Query(default=None, max_length=36),
+    q: str | None = Query(default=None, max_length=80),
+    agrupar: str = Query("detalle", description="detalle | conductor | dia | ruta | conexion"),
+    _: Usuario = Depends(require_permission(Permiso.AUDITORIA_VER)),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Excel de Datos de Navegación: la agrupación elegida, por conductor y por conexión, con sus gráficas."""
+    filtros = consumo_datos.FiltrosConsumo(desde=desde, hasta=hasta, usuario_id=usuario_id, empresa_id=empresa_id,
+                                           ruta=ruta, conexion_id=conexion_id, q=q)
+    try:
+        if not consumo_datos.consultar(db, filtros, agrupar, 1, 0)["total"]:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Sin consumo de datos móviles para el filtro indicado")
+        data = consumo_datos.generar_excel(db, filtros, agrupar)
+    except (consumo_datos.FiltroConsumoInvalido, RangoInvalido) as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    nombre = "Datos_Navegacion" + (f"_{desde:%Y%m%d}" if desde else "") + (
+        f"_{hasta:%Y%m%d}" if hasta and hasta != desde else "") + ".xlsx"
+    return Response(data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
 
 
 # --- Archivo de la bitácora (meses o años cerrados) -------------------------------------------------

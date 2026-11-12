@@ -12,11 +12,16 @@ sistema operativo: sirve para comparar conductores, rutas y días, no para conci
 
 from __future__ import annotations
 
+import io
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Any, Final
 
+from openpyxl import Workbook
+from openpyxl.chart import BarChart, Reference
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -182,4 +187,145 @@ def consultar(db: Session, f: FiltrosConsumo, agrupar: str, limit: int, offset: 
         "agrupar": agrupar, "total": int(total), "items": items,
         "totales": {"solicitudes": int(tot[0] or 0), "bytes_subida": subida, "bytes_bajada": bajada,
                     "bytes_total": subida + bajada, "conexiones": int(tot[3] or 0), "conductores": int(tot[4] or 0)},
+        "grafica": grafica(db, f),
     }
+
+
+def _por(db: Session, f: FiltrosConsumo, grupo: tuple[Any, ...], limite: int | None) -> list[dict[str, Any]]:
+    total_bytes = func.sum(ConsumoDatos.bytes_subida + ConsumoDatos.bytes_bajada)
+    stmt = _filtrar(select(
+        *grupo, *_SUMAS,
+        func.max(ConsumoDatos.usuario).label("usuario"),
+        func.max(ConsumoDatos.usuario_nombre).label("usuario_nombre"),
+        func.max(ConsumoDatos.empresa_nombre).label("empresa_nombre"),
+        func.count(func.distinct(ConsumoDatos.conexion_id)).label("conexiones"),
+    ), f).group_by(*grupo).order_by(total_bytes.desc())
+    if limite:
+        stmt = stmt.limit(limite)
+    salida = []
+    for x in db.execute(stmt).mappings():
+        sub, baj = int(x["bytes_subida"] or 0), int(x["bytes_bajada"] or 0)
+        salida.append({
+            "usuario_id": x["usuario_id"], "conexion_id": x.get("conexion_id"),
+            "usuario": x["usuario"], "usuario_nombre": x["usuario_nombre"], "empresa_nombre": x["empresa_nombre"],
+            "conexiones": int(x["conexiones"] or 0), "solicitudes": int(x["solicitudes"] or 0),
+            "bytes_subida": sub, "bytes_bajada": baj, "bytes_total": sub + baj,
+            "desde": x["desde"], "hasta": x["hasta"],
+        })
+    return salida
+
+
+GRAFICA_CONDUCTORES: Final = 20
+GRAFICA_CONEXIONES: Final = 15
+
+
+def grafica(db: Session, f: FiltrosConsumo) -> dict[str, Any]:
+    """Datos de las gráficas (todas las filas del filtro): Enviado y Recibido por conductor y las conexiones
+    de mayor consumo total."""
+    return {
+        "conductores": _por(db, f, (ConsumoDatos.usuario_id,), GRAFICA_CONDUCTORES),
+        "conexiones": _por(db, f, (ConsumoDatos.usuario_id, ConsumoDatos.conexion_id), GRAFICA_CONEXIONES),
+    }
+
+
+# ------------------------------------------------------------------ Excel
+_COLUMNAS_EXCEL: Final[dict[str, tuple[tuple[str, str], ...]]] = {
+    "detalle": (("fecha_hora", "Fecha y hora"), ("usuario_nombre", "Conductor"), ("usuario", "Usuario"),
+                ("empresa_nombre", "Empresa"), ("conexion_id", "Conexión"), ("metodo", "Método"),
+                ("ruta", "Ruta"), ("tipo_efectivo", "Red")),
+    "conductor": (("usuario_nombre", "Conductor"), ("usuario", "Usuario"), ("empresa_nombre", "Empresa"),
+                  ("fecha_hora", "Fecha y hora"), ("conexiones", "Conexiones")),
+    "dia": (("dia", "Fecha"), ("fecha_hora", "Fecha y hora"), ("conductores", "Conductores"),
+            ("conexiones", "Conexiones")),
+    "ruta": (("metodo", "Método"), ("ruta", "Ruta"), ("fecha_hora", "Fecha y hora"), ("conductores", "Conductores")),
+    "conexion": (("conexion_id", "Conexión"), ("usuario_nombre", "Conductor"), ("usuario", "Usuario"),
+                 ("fecha_hora", "Fecha y hora"), ("tipo_efectivo", "Red")),
+}
+_BYTES_EXCEL: Final = (("solicitudes", "Solicitudes"), ("kb_subida", "Enviado (KB)"),
+                       ("kb_bajada", "Recibido (KB)"), ("kb_total", "Total (KB)"))
+MAX_FILAS_EXCEL: Final = 20000
+
+
+def _fecha_hora(x: dict[str, Any]) -> str:
+    if not x.get("desde"):
+        return ""
+    d, h = to_local(_utc(x["desde"])), to_local(_utc(x["hasta"] or x["desde"]))
+    if d == h:
+        return f"{d:%d/%m/%Y %H:%M:%S}"
+    return f"{d:%d/%m/%Y %H:%M:%S} – " + (f"{h:%H:%M:%S}" if d.date() == h.date() else f"{h:%d/%m/%Y %H:%M:%S}")
+
+
+def _kb(n: int) -> float:
+    return round(n / 1024, 1)
+
+
+def generar_excel(db: Session, f: FiltrosConsumo, agrupar: str) -> bytes:
+    """Hoja 1: las filas de la agrupación elegida. Hoja 2: por conductor y hoja 3: por conexión, cada una con
+    su gráfica (Enviado / Recibido y consumo total)."""
+    datos = consultar(db, f, agrupar, MAX_FILAS_EXCEL, 0)
+    lado = Side(style="thin")
+    borde = Border(left=lado, right=lado, top=lado, bottom=lado)
+    gris = PatternFill("solid", fgColor="D9D9D9")
+
+    def hoja(ws: Any, columnas: tuple[tuple[str, str], ...], filas: list[dict[str, Any]]) -> None:
+        for i, (_, titulo) in enumerate(columnas, start=1):
+            c = ws.cell(1, i, titulo)
+            c.font, c.fill, c.border = Font(name="Arial", size=10, bold=True), gris, borde
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        for r, x in enumerate(filas, start=2):
+            x = dict(x, fecha_hora=_fecha_hora(x), kb_subida=_kb(x["bytes_subida"]),
+                     kb_bajada=_kb(x["bytes_bajada"]), kb_total=_kb(x["bytes_total"]))
+            for i, (k, _) in enumerate(columnas, start=1):
+                c = ws.cell(r, i, x.get(k))
+                c.font, c.border = Font(name="Arial", size=10), borde
+                if k == "dia":
+                    c.number_format = "dd/mm/yyyy"
+                elif k.startswith("kb_"):
+                    c.number_format = "#,##0.0"
+        for i, (k, titulo) in enumerate(columnas, start=1):
+            ancho = {"ruta": 38, "fecha_hora": 30, "usuario_nombre": 26, "empresa_nombre": 24, "conexion_id": 38}
+            ws.column_dimensions[get_column_letter(i)].width = ancho.get(k, max(12, len(titulo) + 2))
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = f"A1:{get_column_letter(len(columnas))}{max(len(filas) + 1, 1)}"
+
+    def grafico(ws: Any, titulo: str, n: int, col_cat: int, cols: tuple[int, ...], celda: str) -> None:
+        if not n:
+            return
+        g = BarChart()
+        g.type, g.title, g.y_axis.title = "col", titulo, "KB"
+        g.height, g.width = 9, max(18, n * 1.6)
+        for col in cols:
+            g.add_data(Reference(ws, min_col=col, min_row=1, max_row=n + 1), titles_from_data=True)
+        g.set_categories(Reference(ws, min_col=col_cat, min_row=2, max_row=n + 1))
+        ws.add_chart(g, celda)
+
+    wb = Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.title = "Datos de Navegación"
+    hoja(ws, _COLUMNAS_EXCEL[agrupar] + _BYTES_EXCEL, datos["items"])
+
+    por_cond = _por(db, f, (ConsumoDatos.usuario_id,), None)
+    cols_cond = (("usuario_nombre", "Conductor"), ("usuario", "Usuario"), ("empresa_nombre", "Empresa"),
+                 ("conexiones", "Conexiones"), ("fecha_hora", "Fecha y hora"), *_BYTES_EXCEL)
+    ws2 = wb.create_sheet("Por conductor")
+    hoja(ws2, cols_cond, por_cond)
+    base = len(cols_cond) - 2  # Enviado, Recibido y Total son las 3 últimas columnas
+    grafico(ws2, "Enviado y Recibido por conductor (KB)", min(len(por_cond), 30), 1, (base, base + 1),
+            f"A{len(por_cond) + 4}")
+
+    por_con = _por(db, f, (ConsumoDatos.usuario_id, ConsumoDatos.conexion_id), None)
+    cols_con = (("conexion_id", "Conexión"), ("usuario_nombre", "Conductor"), ("usuario", "Usuario"),
+                ("fecha_hora", "Fecha y hora"), *_BYTES_EXCEL)
+    ws3 = wb.create_sheet("Por conexión")
+    hoja(ws3, cols_con, por_con)
+    grafico(ws3, "Consumo total por conexión (KB)", min(len(por_con), 30), 2, (len(cols_con),),
+            f"A{len(por_con) + 4}")
+
+    for w in (ws, ws2, ws3):
+        w.page_setup.orientation = "landscape"
+        w.page_setup.fitToWidth, w.page_setup.fitToHeight = 1, 0
+        w.sheet_properties.pageSetUpPr.fitToPage = True
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

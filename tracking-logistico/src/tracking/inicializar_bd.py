@@ -1,4 +1,4 @@
-"""Inicialización y limpieza selectiva de la base de datos (reseteo operativo).
+"""Inicialización y limpieza de la base de datos (instalación de la versión final).
 
 Reglas de negocio
 -----------------
@@ -6,11 +6,14 @@ Reglas de negocio
   - Remesas y facturas, con todo lo que depende de ellas: historial de estatus (``eventos_estatus``),
     fotos de entrega/devolución (``fotos``), capturas de facturas por foto (``capturas_factura``) y
     cargas de Excel (``importaciones``).
-  - Conductores: la tabla ``conductores`` y todos los usuarios con **rol conductor**.
-  - Camiones (se vuelven a cargar con la hoja PLACAS junto con los conductores).
-  - Historial: ``auditoria``, ``bitacora``, ``bitacora_archivos`` y ``consultas_publicas``.
-* SE CONSERVAN INTACTOS: ``empresas``, ``vendedores``, ``feriados`` y los usuarios de oficina
-  (supervisor, transportista, cobranzas y consultor) con sus claves.
+  - Conductores (tabla ``conductores``) y camiones.
+  - Catálogos: empresas de transporte (``empresas``) y ``vendedores``.
+  - Historial: ``auditoria``, ``bitacora``, ``bitacora_archivos``, ``consultas_publicas`` y
+    Datos de Navegación (``consumo_datos``); retos de huella pendientes (``retos_biometricos``).
+  - Usuarios: se borran todos los que NO son Supervisor, Cobranzas o Consultor (conductores y
+    transportistas), con sus llaves de huella.
+* SE CONSERVAN: ``feriados`` (intactos) y los usuarios Supervisor, Cobranzas y Consultor con sus claves
+  y llaves de huella; a estos solo se les quita la empresa asignada (las empresas se vacían).
 
 Seguridad
 ---------
@@ -38,6 +41,7 @@ import contextlib
 import gzip
 import hashlib
 import json
+import re
 import shutil
 import sqlite3
 import sys
@@ -55,7 +59,7 @@ from tracking.enums import AccionAuditoria, Rol
 Destino = Literal["local", "produccion"]
 
 # Orden de borrado: primero los hijos (sirve para SQLite, que borra fila a fila con claves foráneas activas).
-TABLAS_A_VACIAR: tuple[str, ...] = (
+TABLAS_OPERATIVAS: tuple[str, ...] = (
     "eventos_estatus",
     "capturas_factura",
     "fotos",
@@ -64,17 +68,25 @@ TABLAS_A_VACIAR: tuple[str, ...] = (
     "importaciones",
     "conductores",
     "camiones",
+    "vendedores",
     "auditoria",
     "consultas_publicas",
+    "consumo_datos",
+    "retos_biometricos",
     "bitacora",
     "bitacora_archivos",
     "bitacora_archivando",
 )
+# Las empresas se vacían al final: los usuarios que se conservan pueden apuntar a una
+TABLAS_A_VACIAR: tuple[str, ...] = (*TABLAS_OPERATIVAS, "empresas")
 # Tablas que deben quedar EXACTAMENTE igual (se comparan fila por fila con una huella SHA-256)
-TABLAS_CONSERVADAS: tuple[str, ...] = ("empresas", "vendedores", "feriados")
-ROL_CONDUCTOR = Rol.CONDUCTOR.value
-# Columna de usuarios que puede cambiar al borrar conductores (quién le cambió la clave por última vez)
+TABLAS_CONSERVADAS: tuple[str, ...] = ("feriados",)
+ROLES_CONSERVADOS: tuple[str, ...] = (Rol.SUPERVISOR.value, Rol.COBRANZAS.value, Rol.CONSULTOR.value)
+_EN_ROLES = "rol IN (" + ", ".join(f"'{r}'" for r in ROLES_CONSERVADOS) + ")"
+# Columnas de los usuarios conservados que cambian a propósito: quién les cambió la clave (si fue un
+# usuario borrado) y la empresa (las empresas se vacían)
 _COLUMNA_USUARIO_VOLATIL = "clave_actualizada_por_id"
+_COLUMNAS_USUARIO_VOLATILES = (_COLUMNA_USUARIO_VOLATIL, "empresa_id")
 ACCION_AUDITORIA = AccionAuditoria.BASE_INICIALIZADA.value
 
 
@@ -126,7 +138,7 @@ def url_de_destino(destino: Destino, proyecto: Path) -> str:
 def crear_motor(url: str) -> Engine:
     if url.startswith("postgres://"):
         url = "postgresql://" + url[len("postgres://") :]
-    if url.startswith("postgresql://"):
+    if url.startswith("postgresql://") and "+psycopg" not in url.split("://", 1)[0]:
         url = url.replace("postgresql://", "postgresql+psycopg://", 1)
     if url.startswith("sqlite"):
         from sqlalchemy import event
@@ -141,9 +153,40 @@ def crear_motor(url: str) -> Engine:
 
         event.listen(motor, "connect", _pragmas)
         return motor
+    # Neon exige SSL; sin channel_binding a veces cierra el socket («server closed the connection»).
+    from sqlalchemy.engine import make_url
+
+    u = make_url(url)
+    q = dict(u.query)
+    if "neon.tech" in (u.host or ""):
+        q.setdefault("sslmode", "require")
+        q.setdefault("channel_binding", "require")
+    url = u.set(query=q).render_as_string(hide_password=False)
     return create_engine(
-        url, future=True, pool_pre_ping=True, connect_args={"connect_timeout": 20, "prepare_threshold": None}
+        url, future=True, pool_pre_ping=True, connect_args={"connect_timeout": 8, "prepare_threshold": None}
     )
+
+
+def despertar(motor: Engine, log: Callable[[str], None], intentos: int = 6) -> None:
+    """Neon apaga el cómputo cuando no hay tráfico: el primer intento suele fallar. Se reintenta."""
+    import time
+
+    from sqlalchemy.exc import OperationalError
+
+    ultimo: Exception | None = None
+    for n in range(1, intentos + 1):
+        try:
+            with motor.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            if n > 1:
+                log(f"Conectado a la base en el intento {n}.")
+            return
+        except OperationalError as e:
+            ultimo = e
+            espera = min(8, 2 * n)
+            log(f"Neon no respondió (intento {n} de {intentos}). Reintento en {espera} s…")
+            time.sleep(espera)
+    raise ultimo if ultimo else RuntimeError("No se pudo conectar")
 
 
 def describir(url: str) -> str:
@@ -172,10 +215,14 @@ def conteos(conn: Connection) -> dict[str, int]:
         if t in existentes:
             out[t] = int(conn.execute(text(f"SELECT COUNT(*) FROM {_q(conn, t)}")).scalar_one())
     if "usuarios" in existentes:
-        out["usuarios_conductor"] = int(
-            conn.execute(text("SELECT COUNT(*) FROM usuarios WHERE rol = :r"), {"r": ROL_CONDUCTOR}).scalar_one()
+        for rol in Rol:
+            out[f"usuarios_{rol.value}"] = int(
+                conn.execute(text("SELECT COUNT(*) FROM usuarios WHERE rol = :r"), {"r": rol.value}).scalar_one()
+            )
+        out["usuarios_conservados"] = int(
+            conn.execute(text(f"SELECT COUNT(*) FROM usuarios WHERE {_EN_ROLES}")).scalar_one()
         )
-        out["usuarios_oficina"] = out["usuarios"] - out["usuarios_conductor"]
+        out["usuarios_borrar"] = out["usuarios"] - out["usuarios_conservados"]
     return out
 
 
@@ -210,9 +257,7 @@ def huella(
 def huellas_conservadas(conn: Connection) -> dict[str, str]:
     existentes = _tablas(conn)
     out = {t: huella(conn, t) for t in TABLAS_CONSERVADAS if t in existentes}
-    out["usuarios_oficina"] = huella(
-        conn, "usuarios", "WHERE rol <> :r", {"r": ROL_CONDUCTOR}, excluir=(_COLUMNA_USUARIO_VOLATIL,)
-    )
+    out["usuarios_conservados"] = huella(conn, "usuarios", f"WHERE {_EN_ROLES}", excluir=_COLUMNAS_USUARIO_VOLATILES)
     return out
 
 
@@ -294,7 +339,7 @@ def _rutas_en_disco(conn: Connection) -> list[str]:
 
 def _vaciar_postgres(conn: Connection, existentes: set[str]) -> None:
     conn.execute(text("SET LOCAL lock_timeout = '30s'"))
-    tablas = [t for t in TABLAS_A_VACIAR if t in existentes]
+    tablas = [t for t in TABLAS_OPERATIVAS if t in existentes]
     # TRUNCATE no dispara los disparadores fila a fila que hacen inmutable la bitácora, y reinicia los
     # contadores (RESTART IDENTITY). Sin CASCADE: si alguna otra tabla dependiera de estas, falla y no borra.
     conn.execute(text(f"TRUNCATE TABLE {', '.join(_q(conn, t) for t in tablas)} RESTART IDENTITY"))
@@ -314,7 +359,7 @@ def _vaciar_sqlite(conn: Connection, existentes: set[str]) -> None:
     ]
     for nombre, _ in disparadores:
         conn.execute(text(f'DROP TRIGGER "{nombre}"'))
-    for t in TABLAS_A_VACIAR:
+    for t in TABLAS_OPERATIVAS:
         if t not in existentes or t == "bitacora_archivando":
             continue
         if t == "bitacora" and "bitacora_archivando" in existentes:
@@ -326,22 +371,32 @@ def _vaciar_sqlite(conn: Connection, existentes: set[str]) -> None:
         conn.execute(text(f'DELETE FROM "{t}"'))
     for _, sql in disparadores:
         conn.execute(text(sql))
-    if (
-        "sqlite_sequence" in existentes
-        or conn.execute(text("SELECT 1 FROM sqlite_master WHERE name = 'sqlite_sequence'")).first()
-    ):
+
+
+def _reiniciar_contadores_sqlite(conn: Connection) -> None:
+    if conn.execute(text("SELECT 1 FROM sqlite_master WHERE name = 'sqlite_sequence'")).first():
         conn.execute(
             text("DELETE FROM sqlite_sequence WHERE name IN (" + ", ".join(f"'{t}'" for t in TABLAS_A_VACIAR) + ")")
         )
 
 
-def _borrar_usuarios_conductores(conn: Connection) -> None:
-    ids = "SELECT id FROM usuarios WHERE rol = :r"
+def _borrar_usuarios(conn: Connection) -> None:
+    """Quedan solo Supervisor, Cobranzas y Consultor (sin empresa asignada); se borran sus llaves de huella
+    a los demás."""
+    ids = f"SELECT id FROM usuarios WHERE NOT ({_EN_ROLES})"
     conn.execute(
-        text(f"UPDATE usuarios SET {_COLUMNA_USUARIO_VOLATIL} = NULL WHERE {_COLUMNA_USUARIO_VOLATIL} IN ({ids})"),
-        {"r": ROL_CONDUCTOR},
+        text(f"UPDATE usuarios SET {_COLUMNA_USUARIO_VOLATIL} = NULL WHERE {_COLUMNA_USUARIO_VOLATIL} IN ({ids})")
     )
-    conn.execute(text("DELETE FROM usuarios WHERE rol = :r"), {"r": ROL_CONDUCTOR})
+    if "credenciales_biometricas" in _tablas(conn):
+        conn.execute(text(f"DELETE FROM credenciales_biometricas WHERE usuario_id IN ({ids})"))
+    conn.execute(text(f"DELETE FROM usuarios WHERE NOT ({_EN_ROLES})"))
+    conn.execute(text("UPDATE usuarios SET empresa_id = NULL WHERE empresa_id IS NOT NULL"))
+
+
+def _vaciar_empresas(conn: Connection) -> None:
+    conn.execute(text("DELETE FROM empresas"))
+    if conn.dialect.name == "postgresql":
+        conn.execute(text("SELECT setval(pg_get_serial_sequence('empresas', 'id'), 1, false)"))
 
 
 def validar(conn: Connection, antes: dict[str, int], huellas_antes: dict[str, str]) -> list[str]:
@@ -351,9 +406,21 @@ def validar(conn: Connection, antes: dict[str, int], huellas_antes: dict[str, st
     for t in TABLAS_A_VACIAR:
         if despues.get(t, 0) != 0:
             errores.append(f"La tabla {t} debía quedar vacía y tiene {despues[t]} registro(s).")
-    if despues.get("usuarios_conductor", 0) != 0:
-        errores.append(f"Quedan {despues['usuarios_conductor']} usuario(s) con rol conductor.")
-    for t in (*TABLAS_CONSERVADAS, "usuarios_oficina"):
+    if despues.get("usuarios_borrar", 0) != 0:
+        errores.append(f"Quedan {despues['usuarios_borrar']} usuario(s) que no son Supervisor, Cobranzas o Consultor.")
+    if not despues.get(f"usuarios_{Rol.SUPERVISOR.value}"):
+        errores.append("No quedaría ningún usuario Supervisor: nadie podría administrar el sistema.")
+    con_empresa = conn.execute(text("SELECT COUNT(*) FROM usuarios WHERE empresa_id IS NOT NULL")).scalar_one()
+    if con_empresa:
+        errores.append(f"{con_empresa} usuario(s) conservan una empresa asignada.")
+    if "credenciales_biometricas" in _tablas(conn):
+        sueltas = conn.execute(text(
+            "SELECT COUNT(*) FROM credenciales_biometricas c "
+            "WHERE NOT EXISTS (SELECT 1 FROM usuarios u WHERE u.id = c.usuario_id)"
+        )).scalar_one()
+        if sueltas:
+            errores.append(f"{sueltas} llave(s) de huella quedaron sin usuario.")
+    for t in (*TABLAS_CONSERVADAS, "usuarios_conservados"):
         if t in antes and despues.get(t) != antes[t]:
             errores.append(f"{t}: había {antes[t]} registro(s) y ahora hay {despues.get(t)}; no se debía tocar.")
     huellas_despues = huellas_conservadas(conn)
@@ -374,7 +441,8 @@ def validar(conn: Connection, antes: dict[str, int], huellas_antes: dict[str, st
 def _registrar_auditoria(conn: Connection, destino: str, antes: dict[str, int], respaldo: Path | None) -> None:
     from tracking.models import Auditoria
 
-    borrados = {t: antes[t] for t in (*TABLAS_A_VACIAR, "usuarios_conductor") if antes.get(t)}
+    borrados = {t: antes[t] for t in (*TABLAS_A_VACIAR, "usuarios_conductor", "usuarios_transportista")
+                if antes.get(t)}
     conn.execute(
         insert(Auditoria).values(
             created_at=datetime.now(timezone.utc),
@@ -386,7 +454,7 @@ def _registrar_auditoria(conn: Connection, destino: str, antes: dict[str, int], 
                 "destino": destino,
                 "borrados": borrados,
                 "respaldo": respaldo.name if respaldo else None,
-                "conservados": {t: antes.get(t, 0) for t in (*TABLAS_CONSERVADAS, "usuarios_oficina")},
+                "conservados": {t: antes.get(t, 0) for t in (*TABLAS_CONSERVADAS, "usuarios_conservados")},
             },
         )
     )
@@ -411,12 +479,16 @@ def limpiar(
             antes = conteos(conn)
             huellas_antes = huellas_conservadas(conn)
             rutas = _rutas_en_disco(conn)
-            log("Vaciando remesas, facturas, conductores, camiones e historial…")
+            log("Vaciando remesas, facturas, conductores, camiones, vendedores e historial…")
             if conn.dialect.name == "postgresql":
                 _vaciar_postgres(conn, existentes)
             else:
                 _vaciar_sqlite(conn, existentes)
-            _borrar_usuarios_conductores(conn)
+            log("Borrando usuarios (quedan Supervisor, Cobranzas y Consultor) y empresas…")
+            _borrar_usuarios(conn)
+            _vaciar_empresas(conn)
+            if conn.dialect.name == "sqlite":
+                _reiniciar_contadores_sqlite(conn)
             log("Validando que solo se borró lo permitido…")
             errores = validar(conn, antes, huellas_antes)
             if errores:
@@ -463,6 +535,185 @@ def mover_fotos(rutas: list[str], carpeta_fotos: Path, destino: Path) -> int:
     return n
 
 
+def url_https(proyecto: Path) -> str:
+    """Conexión con la que Neon acepta consultas por HTTPS (puerto 443), no por el puerto 5432."""
+    env = _leer_env(proyecto / ".env.local")
+    for clave in ("DATABASE_URL", "POSTGRES_URL", "DATABASE_URL_UNPOOLED", "POSTGRES_URL_NON_POOLING"):
+        if env.get(clave):
+            return env[clave]
+    raise SystemExit("No se encontró la base de producción en .env.local.")
+
+
+def _api_neon(url: str) -> str:
+    from sqlalchemy.engine import make_url
+
+    host = make_url(url).host or ""
+    if "neon.tech" not in host or "." not in host:
+        raise RuntimeError("La dirección no es de Neon.")
+    return "https://api." + host.split(".", 1)[1] + "/sql"
+
+
+def neon_consultar(url: str, consultas: list[str]) -> list[list[dict[str, Any]]]:
+    """Varias consultas en una sola transacción, por HTTPS. Si una falla, Neon deshace todas."""
+    import urllib.error
+    import urllib.request
+
+    cuerpo = json.dumps({"queries": [{"query": q, "params": []} for q in consultas]}).encode()
+    req = urllib.request.Request(
+        _api_neon(url),
+        data=cuerpo,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Neon-Connection-String": url,
+            "Neon-Raw-Text-Output": "true",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            data = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as exc:
+        detalle = exc.read().decode(errors="replace")[:400]
+        raise RuntimeError(f"Neon respondió {exc.code}: {detalle}") from exc
+    return [list(r.get("rows") or []) for r in data["results"]]
+
+
+def sql_limpieza_postgres(tablas: set[str]) -> str:
+    """Un solo bloque: vacía lo operativo, deja feriados y Supervisor, Cobranzas y Consultor, y valida."""
+    truncar = [t for t in TABLAS_OPERATIVAS if t in tablas and re.fullmatch(r"[a-z_]+", t)]
+    if not truncar:
+        raise RuntimeError("No están las tablas del sistema.")
+    lista = ", ".join(truncar)
+    revisiones = "\n".join(
+        f"  IF (SELECT count(*) FROM {t}) <> 0 THEN RAISE EXCEPTION 'la tabla {t} no quedo vacia'; END IF;"
+        for t in (*truncar, "empresas")
+        if t in tablas or t == "empresas"
+    )
+    cred = ""
+    if "credenciales_biometricas" in tablas:
+        cred = (
+            "  DELETE FROM credenciales_biometricas WHERE usuario_id IN "
+            f"(SELECT id FROM usuarios WHERE NOT ({_EN_ROLES}));\n"
+        )
+    return f"""
+DO $limpieza$
+DECLARE
+  feriados_antes int;
+  oficina_antes int;
+BEGIN
+  SELECT count(*) INTO feriados_antes FROM feriados;
+  SELECT count(*) INTO oficina_antes FROM usuarios WHERE {_EN_ROLES};
+  TRUNCATE TABLE {lista} RESTART IDENTITY;
+  UPDATE usuarios SET {_COLUMNA_USUARIO_VOLATIL} = NULL
+    WHERE {_COLUMNA_USUARIO_VOLATIL} IN (SELECT id FROM usuarios WHERE NOT ({_EN_ROLES}));
+{cred}  DELETE FROM usuarios WHERE NOT ({_EN_ROLES});
+  UPDATE usuarios SET empresa_id = NULL WHERE empresa_id IS NOT NULL;
+  DELETE FROM empresas;
+  PERFORM setval(pg_get_serial_sequence('empresas', 'id'), 1, false);
+{revisiones}
+  IF (SELECT count(*) FROM usuarios WHERE NOT ({_EN_ROLES})) <> 0 THEN
+    RAISE EXCEPTION 'quedaron usuarios que no son Supervisor, Cobranzas o Consultor';
+  END IF;
+  IF (SELECT count(*) FROM usuarios WHERE rol = 'supervisor') = 0 THEN
+    RAISE EXCEPTION 'no quedaria ningun Supervisor';
+  END IF;
+  IF (SELECT count(*) FROM usuarios WHERE empresa_id IS NOT NULL) <> 0 THEN
+    RAISE EXCEPTION 'un usuario conserva empresa';
+  END IF;
+  IF (SELECT count(*) FROM feriados) <> feriados_antes THEN
+    RAISE EXCEPTION 'cambiaron los feriados';
+  END IF;
+  IF (SELECT count(*) FROM usuarios WHERE {_EN_ROLES}) <> oficina_antes THEN
+    RAISE EXCEPTION 'cambio la cantidad de usuarios de oficina';
+  END IF;
+  INSERT INTO auditoria (created_at, actor_id, actor_rol, accion, objetivo_usuario_id, detalle)
+  VALUES (now(), NULL, 'sistema', '{ACCION_AUDITORIA}', NULL,
+          jsonb_build_object('destino', 'produccion', 'via', 'https'));
+END
+$limpieza$;
+"""
+
+
+def _conteos_https(url: str, tablas: set[str]) -> dict[str, int]:
+    nombres = [t for t in (*TABLAS_A_VACIAR, *TABLAS_CONSERVADAS, "usuarios") if t in tablas]
+    consultas = [f"SELECT count(*)::int AS n FROM {t}" for t in nombres]
+    consultas.append("SELECT rol, count(*)::int AS n FROM usuarios GROUP BY rol")
+    filas = neon_consultar(url, consultas)
+    out = {t: int(filas[i][0]["n"]) for i, t in enumerate(nombres)}
+    roles = {r["rol"]: int(r["n"]) for r in filas[-1]}
+    for rol in Rol:
+        out[f"usuarios_{rol.value}"] = roles.get(rol.value, 0)
+    out["usuarios_conservados"] = sum(out.get(f"usuarios_{r}", 0) for r in ROLES_CONSERVADOS)
+    out["usuarios_borrar"] = out.get("usuarios", 0) - out["usuarios_conservados"]
+    return out
+
+
+def respaldar_https(url: str, tablas: set[str], carpeta: Path, sello: str, log: Callable[[str], None]) -> Path:
+    """Respaldo por HTTPS. No incluye el binario de las fotos (columna bytea): el puerto 5432 no deja bajarlo."""
+    carpeta.mkdir(parents=True, exist_ok=True)
+    archivo = carpeta / f"produccion_{sello}.jsonl.gz"
+    cols = neon_consultar(
+        url,
+        [
+            "SELECT table_name, column_name FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND udt_name <> 'bytea' ORDER BY table_name, ordinal_position"
+        ],
+    )[0]
+    por_tabla: dict[str, list[str]] = {}
+    for c in cols:
+        if c["table_name"] in tablas and re.fullmatch(r"[a-z_]+", c["column_name"]):
+            por_tabla.setdefault(c["table_name"], []).append(c["column_name"])
+    total = 0
+    with gzip.open(archivo, "wt", encoding="utf-8") as gz:
+        for tabla, columnas in sorted(por_tabla.items()):
+            filas = neon_consultar(url, [f"SELECT {', '.join(columnas)} FROM {tabla}"])[0]
+            for fila in filas:
+                gz.write(json.dumps({"tabla": tabla, "fila": fila}, ensure_ascii=False, default=str) + "\n")
+            gz.write(json.dumps({"tabla": tabla, "filas": len(filas), "fin": True}) + "\n")
+            total += len(filas)
+    log(f"Respaldo por HTTPS ({total} filas, sin el binario de las fotos): {archivo}")
+    return archivo
+
+
+def inicializar_por_https(
+    proyecto: Path, *, simular: bool, confirmar: bool, carpeta: Path, sello: str, log: Callable[[str], None]
+) -> int:
+    url = url_https(proyecto)
+    log(f"Base de datos: PRODUCCIÓN por HTTPS · {describir(url)}")
+    nombres = {
+        r["table_name"]
+        for r in neon_consultar(
+            url,
+            ["SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"],
+        )[0]
+    }
+    faltan = {"usuarios", "empresas", "feriados", "facturas", "remesas"} - nombres
+    if faltan:
+        raise SystemExit(f"La base no tiene las tablas del sistema ({', '.join(sorted(faltan))}).")
+    antes = _conteos_https(url, nombres)
+    log("Situación actual:\n" + tabla_resumen(antes, None))
+    if not simular and not confirmar:
+        print("\nEsto borra definitivamente lo marcado «SE VACÍA». Para continuar escriba BORRAR PRODUCCION: ", end="")
+        if input().strip().upper() != "BORRAR PRODUCCION":
+            log("Cancelado por el usuario: no se cambió nada.")
+            return 1
+    if simular:
+        log("SIMULACIÓN por HTTPS: no se envió ninguna orden de borrado. La base no cambió.")
+        log("Resultado:\n" + tabla_resumen(antes, antes))
+        return 0
+    respaldo = respaldar_https(url, nombres, carpeta, sello, log)
+    log("Vaciando la base (una sola transacción; si algo no cuadra, Neon la deshace)…")
+    neon_consultar(url, [sql_limpieza_postgres(nombres)])
+    despues = _conteos_https(url, nombres)
+    log(f"Respaldo: {respaldo.name}")
+    log("Resultado:\n" + tabla_resumen(antes, despues))
+    if despues.get("facturas") or despues.get("usuarios_borrar") or not despues.get("usuarios_supervisor"):
+        log("VALIDACIÓN FALLIDA después de confirmar. Revise el respaldo.")
+        return 2
+    log("BASE INICIALIZADA CORRECTAMENTE.")
+    return 0
+
+
 def carpeta_fotos_local(proyecto: Path) -> Path | None:
     env = _leer_env(proyecto / ".env")
     if (env.get("STORAGE_BACKEND") or "disk").lower() == "db":
@@ -480,16 +731,20 @@ ETIQUETAS = {
     "capturas_factura": "Capturas de facturas (foto)",
     "importaciones": "Cargas de Excel",
     "conductores": "Conductores",
-    "usuarios_conductor": "Usuarios con rol conductor",
+    "usuarios_conductor": "Usuarios Conductor",
+    "usuarios_transportista": "Usuarios Transportista",
     "camiones": "Camiones",
+    "empresas": "Empresas de transporte",
+    "vendedores": "Vendedores",
     "auditoria": "Auditoría de seguridad",
     "bitacora": "Bitácora",
     "bitacora_archivos": "Bitácora archivada",
     "consultas_publicas": "Consultas públicas",
-    "empresas": "Empresas",
-    "vendedores": "Vendedores",
+    "consumo_datos": "Datos de Navegación",
     "feriados": "Feriados",
-    "usuarios_oficina": "Usuarios de oficina",
+    "usuarios_supervisor": "Usuarios Supervisor",
+    "usuarios_cobranzas": "Usuarios Cobranzas",
+    "usuarios_consultor": "Usuarios Consultor",
 }
 _BORRA = (
     "remesas",
@@ -500,13 +755,17 @@ _BORRA = (
     "importaciones",
     "conductores",
     "usuarios_conductor",
+    "usuarios_transportista",
     "camiones",
+    "empresas",
+    "vendedores",
     "auditoria",
     "bitacora",
     "bitacora_archivos",
     "consultas_publicas",
+    "consumo_datos",
 )
-_CONSERVA = ("empresas", "vendedores", "feriados", "usuarios_oficina")
+_CONSERVA = ("feriados", "usuarios_supervisor", "usuarios_cobranzas", "usuarios_consultor")
 
 
 def tabla_resumen(antes: dict[str, int], despues: dict[str, int] | None) -> str:
@@ -523,8 +782,8 @@ def tabla_resumen(antes: dict[str, int], despues: dict[str, int] | None) -> str:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="python -m tracking.inicializar_bd",
-        description="Vacía remesas, facturas, conductores e historial; conserva "
-        "empresas, vendedores, feriados y usuarios de oficina.",
+        description="Vacía todo (remesas, facturas, conductores, camiones, empresas, vendedores e historial); "
+        "conserva los feriados y los usuarios Supervisor, Cobranzas y Consultor.",
     )
     p.add_argument("--destino", choices=("local", "produccion"), required=True)
     p.add_argument("--proyecto", type=Path, default=Path.cwd(), help="Carpeta tracking-logistico")
@@ -550,6 +809,23 @@ def main(argv: list[str] | None = None) -> int:
         url = url_de_destino(a.destino, proyecto)
         log(f"Base de datos: {'PRODUCCIÓN' if a.destino == 'produccion' else 'LOCAL'} · {describir(url)}")
         motor = crear_motor(url)
+        if a.destino == "produccion":
+            log("Conectando a Neon…")
+            try:
+                despertar(motor, log, intentos=1)
+            except Exception as exc:
+                from sqlalchemy.exc import OperationalError
+
+                if not isinstance(exc, OperationalError):
+                    raise
+                log(
+                    "El puerto de Postgres (5432) no responde desde esta red. "
+                    "El sitio publicado sí entra. Se continúa por HTTPS, que es el camino que esta red deja pasar."
+                )
+                motor.dispose()
+                return inicializar_por_https(
+                    proyecto, simular=a.simular, confirmar=a.si, carpeta=carpeta, sello=sello, log=log
+                )
         verificar_esquema(motor, actualizar=a.destino == "local", log=log)
         with motor.connect() as conn:
             antes = conteos(conn)

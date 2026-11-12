@@ -1,0 +1,15 @@
+[2026-11-09 07:58:13] Base de datos: PRODUCCIÓN · PostgreSQL ep-ancient-silence-b7o081wn.c-13.us-east-1.aws.neon.tech/neondb
+[2026-11-09 07:59:13] ERROR: OperationalError: (psycopg.OperationalError) connection failed: connection to server at "100.62.177.240", port 5432 failed: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+Multiple connection attempts failed. All failures were:
+- host: 'ep-ancient-silence-b7o081wn.c-13.us-east-1.aws.neon.tech', port: None, hostaddr: '34.205.173.201': connection failed: connection to server at "34.205.173.201", port 5432 failed: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+- host: 'ep-ancient-silence-b7o081wn.c-13.us-east-1.aws.neon.tech', port: None, hostaddr: '52.2.183.93': connection failed: connection to server at "52.2.183.93", port 5432 failed: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+- host: 'ep-ancient-silence-b7o081wn.c-13.us-east-1.aws.neon.tech', port: None, hostaddr: '100.62.177.240': connection failed: connection to server at "100.62.177.240", port 5432 failed: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+(Background on this error at: https://sqlalche.me/e/21/e3q8). La transacción se deshizo; no se borró nada.

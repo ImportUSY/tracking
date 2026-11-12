@@ -425,10 +425,12 @@ lectura, salvo su clave y la vista previa de correos.
 
 ## 4n. Inicializar la base de datos (v1.23)
 
-* `..\Inicializar_BD_Tracking.bat` (en `C:\Desarrollo\Tracking - Octubre\`) ejecuta
-  `python -m tracking.inicializar_bd`: **vacía** remesas, facturas (historial, fotos, capturas, cargas de Excel),
-  conductores y sus usuarios, camiones, auditoría, bitácora (también la archivada) y consultas públicas;
-  **conserva** empresas, vendedores, feriados y usuarios de oficina. Ver `..\LEEME_Inicializar_BD.txt`.
+* `..\4 - INICIALIZAR BASE DE DATOS.bat` (o `..\Inicializar_BD_Tracking.bat`, en
+  `C:\Desarrollo\Tracking - Octubre\`) ejecuta `python -m tracking.inicializar_bd`: **vacía** remesas,
+  facturas (historial, fotos, capturas, cargas de Excel), conductores y transportistas (y sus usuarios),
+  camiones, empresas, vendedores, auditoría, bitácora (también la archivada), consultas públicas y Datos
+  de Navegación; **conserva** feriados y los usuarios **Supervisor, Cobranzas y Consultor**. Ver
+  `..\LEEME_Inicializar_BD.txt`.
 * Respaldo completo previo en `..\respaldos_bd\` (copia SQLite o JSON Lines de todas las tablas de Neon);
   las fotos en disco se mueven al respaldo. Una sola transacción, validada antes de confirmar (tablas en
   cero y huella SHA-256 de lo conservado); si falla, se deshace (código 2). `--simular` no cambia nada.
@@ -554,6 +556,37 @@ lectura, salvo su clave y la vista previa de correos.
   tabla, igual que las otras barras. Por Entregar ya no incluye las No Entregado.
 * **v1.28.1**: el aviso «Intento anterior: No se entregó…» de la app del conductor tiene las letras en
   amarillo sobre fondo morado oscuro (se lee igual con el tema claro u oscuro).
+
+## 4v. Datos de Navegación: Visualizar, Excel, Imprimir y gráficas (v1.29.0)
+
+* Debajo de los filtros: **Visualizar por pantalla**, **Descargar Excel** e **Imprimir**, como en el
+  Indicador de Gestión.
+* **Gráficas** (con todas las filas del filtro, no solo la página; Chart.js, colores del Indicador):
+  * Enviado, Recibido y Total **por conductor** (hasta 20, de mayor a menor consumo).
+  * Dona **Enviado frente a Recibido** con el total del filtro y su porcentaje.
+  * **Consumo total por conexión** (cada vez que el conductor abrió la app; las 15 de mayor consumo), con
+    Enviado y Recibido apilados, el conductor, la conexión y la fecha y hora.
+  La API las devuelve en `grafica` de `GET /api/admin/consumo-datos` (cuyo `limit` ahora llega a 5000).
+* **Excel** (`GET /api/admin/consumo-datos.xlsx`, mismos filtros): hoja con la agrupación elegida, hoja
+  «Por conductor» y hoja «Por conexión», cada una con su gráfica de Excel. Los bytes van en KB.
+* **Imprimir**: totales, las tres gráficas y todas las filas (hasta 5000) en horizontal.
+
+## 4w. Fecha y hora del estatus Por Entregar (v1.30.0)
+
+* **App del conductor**: al presionar **Por Entregar** pregunta «¿Desea tomar la fecha y hora actual?».
+  * **Sí**: se usa la fecha y hora del teléfono (como antes).
+  * **No**: pide la fecha y hora. No puede ser futura, ni anterior a la fecha Preparado de las facturas
+    seleccionadas, ni de hace más de 30 días (el límite de los cambios sin señal). Funciona sin señal: la
+    hora elegida viaja en `ocurrido_at` del evento.
+* **Panel (Supervisor y Transportista)**:
+  * En la ficha, junto a la fecha **Por Entregar**, el botón **Modificar** cambia esa fecha y hora (con
+    motivo opcional): `PUT /api/facturas/{id}/fecha-por-entregar` `{fecha, motivo}`. Debe quedar entre la
+    Fecha Preparado y el estatus siguiente (No Entregado, Entregada o Devolución) y no puede ser futura.
+    Se corrige también el evento Por Entregar del historial (y `estatus_at` si la factura sigue Por
+    Entregar); queda en Auditoría como «Fecha Por Entregar modificada» con la fecha anterior y la nueva.
+  * En **Estatus y fotos**, al elegir **Por Entregar** se pide la «Fecha y hora Por Entregar» (no anterior a
+    la Fecha Preparado).
+* Cobranzas y Consultor no pueden modificarla (permiso `facturas.estatus.corregir`).
 
 ## 5. Pruebas y calidad
 

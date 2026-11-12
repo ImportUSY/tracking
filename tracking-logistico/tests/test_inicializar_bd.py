@@ -1,4 +1,5 @@
-"""Script de inicialización de la base: vacía lo operativo y conserva empresas, vendedores, feriados y oficina."""
+"""Script de inicialización de la base: vacía todo y conserva los feriados y los usuarios Supervisor, Cobranzas
+y Consultor."""
 
 from __future__ import annotations
 
@@ -110,7 +111,7 @@ def _sembrar_todo(client: TestClient, sup: dict[str, str]) -> None:
     assert r.status_code < 300, r.text
     claves = {c["usuario"]: c["clave_temporal"] for c in r.json()["credenciales"]}
     _usuario(client, sup, "transporte1", "transportista", emp)
-    _usuario(client, sup, "cobranzas1", "cobranzas", None)
+    _usuario(client, sup, "cobranzas1", "cobranzas", emp)  # se conserva, pero sin empresa
     _usuario(client, sup, "consultor1", "consultor", None)
     up = client.post("/api/importaciones", headers=sup, files={"archivo": ("R.xlsx", _libro(), xlsx)})
     assert up.status_code == 201, up.text
@@ -130,6 +131,9 @@ def _sembrar_todo(client: TestClient, sup: dict[str, str]) -> None:
     assert client.post("/api/conductor/eventos", headers=luis, json={"eventos": [ev2]}).json()["resultados"][0][
         "aplicado"
     ]
+    reg = {"dia": ahora[:10], "conexion_id": "abcd1234-0000", "metodo": "GET", "ruta": "/api/conductor/facturas",
+           "solicitudes": 1, "bytes_subida": 10, "bytes_bajada": 20, "desde": ahora, "hasta": ahora}
+    assert client.post("/api/conductor/consumo", headers=luis, json={"registros": [reg]}).status_code == 200
     _foto(client, sup)  # captura de factura por foto
     client.get("/api/publico/tracking", params={"q": "FAC-U00001201"})  # consulta pública
     _sembrar(client)  # bitácora vieja y su archivo (inmutable)
@@ -191,13 +195,15 @@ def test_limpieza_vacia_lo_operativo_y_conserva_catalogos(
         "bitacora",
         "bitacora_archivos",
         "consultas_publicas",
+        "consumo_datos",
         "usuarios_conductor",
+        "usuarios_transportista",
         "empresas",
         "vendedores",
         "feriados",
     ):
         assert antes[t] > 0, t  # la prueba cubre todas las tablas
-    assert antes["usuarios_oficina"] == 4  # supervisor, transportista, cobranzas y consultor
+    assert antes["usuarios_conservados"] == 3  # supervisor, cobranzas y consultor
     fotos_disco = [p for p in Path(settings.storage_dir).rglob("*") if p.is_file()]
     assert fotos_disco
 
@@ -210,8 +216,9 @@ def test_limpieza_vacia_lo_operativo_y_conserva_catalogos(
             assert despues[t] == 1  # solo el registro de la propia limpieza
         elif t in despues:
             assert despues[t] == 0, t
-    assert despues["usuarios_conductor"] == 0
-    for t in ("empresas", "vendedores", "feriados", "usuarios_oficina"):
+    assert despues["usuarios_conductor"] == 0 and despues["usuarios_transportista"] == 0
+    assert despues["usuarios_borrar"] == 0
+    for t in ("feriados", "usuarios_conservados", "usuarios_supervisor", "usuarios_cobranzas", "usuarios_consultor"):
         assert despues[t] == antes[t], t
     assert _huellas(settings) == huellas  # contenido idéntico, fila por fila
 
@@ -234,11 +241,20 @@ def test_limpieza_vacia_lo_operativo_y_conserva_catalogos(
 
     # El sistema sigue funcionando: la oficina entra, los conductores ya no, y se puede cargar de nuevo
     assert client.post("/api/auth/login", json={"username": "15111222", "password": "qwerty"}).status_code == 401
+    r = client.post("/api/auth/login", json={"username": "transporte1", "password": "clave-transporte1"})
+    assert r.status_code == 401
     sup2 = login(client, SUP_USER, SUP_PASS)
     login(client, "cobranzas1", "clave-cobranzas1")
+    login(client, "consultor1", "clave-consultor1")
     aud = client.get("/api/admin/auditoria", headers=sup2).json()
     assert aud[0]["accion"] == "base_inicializada" and aud[0]["detalle"]["borrados"]["facturas"] == antes["facturas"]
-    emp = client.get("/api/admin/empresas", headers=sup2).json()[0]["id"]
+    assert client.get("/api/admin/empresas", headers=sup2).json() == []
+    usuarios = client.get("/api/admin/usuarios", headers=sup2).json()
+    usuarios = usuarios["items"] if isinstance(usuarios, dict) else usuarios
+    assert sorted(u["rol"] for u in usuarios) == ["cobranzas", "consultor", "supervisor"]
+    assert all(u.get("empresa_id") is None for u in usuarios)
+    emp = crear_empresa(client, sup2)
+    assert emp == 1  # contador reiniciado
     r = client.post(
         "/api/admin/catalogos/placas",
         headers=sup2,

@@ -12,7 +12,7 @@
   const PERM = new Set(MISPERM.permisos_interfaz && MISPERM.permisos_interfaz.length ? MISPERM.permisos_interfaz : MISPERM.permisos);
   // Página y servidor deben ser de la misma versión. Si no, casi siempre es una ventana vieja del
   // programa que sigue abierta (o una página guardada en caché): se avisa en vez de fallar en silencio.
-  const VERSION_PANEL = "1.28.1";
+  const VERSION_PANEL = "1.30.0";
   const cmpVer = (a, b) => { const x = a.split(".").map(Number), y = b.split(".").map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0); } return 0; };
   const AVISO_VERSION_VIEJA = "El programa que está abierto en esta PC es una versión anterior. Cierre TODAS las ventanas negras de «Tracking Logístico» y abra de nuevo «1 - PROBAR EN MI PC.bat» (o vuelva a publicar en Vercel).";
   api("/api/config").then((c) => {
@@ -148,7 +148,7 @@
     { id: "conductores", t: "Conductores", fn: vistaConductores },
     { id: "camiones", t: "Camiones", fn: vistaCamiones },
     { id: "vendedores", t: "Vendedores", fn: vistaVendedores },
-    { id: "feriados", t: "Feriados", fn: vistaFeriados, perm: "catalogos.ver" },
+    { id: "feriados", t: "Feriados", fn: vistaFeriados, perm: "feriados.gestionar" },
     { id: "usuarios", t: "Usuarios", fn: vistaUsuarios, perm: "usuarios.ver" },
     { id: "empresas", t: "Empresas", fn: vistaEmpresas, perm: "empresas.ver" },
     { id: "reportes", t: "Cobranzas y reportes", fn: vistaReportes },
@@ -895,11 +895,21 @@
         ${f.montos_visibles !== false ? `<div><small>Total factura / neto</small><div>${fmtMonto(f.total_fact)} / ${fmtMonto(f.total_neto)}</div></div>` : ""}
         <div><small>Fecha factura</small><div>${esc(fmtFecha(f.fecha_fac)) || "—"}</div></div>
         <div><small>Fecha Preparado</small><div>${esc(fmtMomento(f.fecha_alm)) || "—"}</div></div>
-        <div><small>Por Entregar</small><div>${esc(fmtMomento(f.fecha_tra)) || "—"}</div></div>
+        <div><small>Por Entregar</small><div>${esc(fmtMomento(f.fecha_tra)) || "—"}
+          ${CORRIGE && f.fecha_tra && f.estatus !== "recibida" ? '<button type="button" class="small" id="btnFechaTra">Modificar</button>' : ""}</div></div>
         <div><small>Fecha Entregado (Fecha Rec)</small><div>${esc(fmtMomento(f.fecha_rec)) || (f.estatus === "devolucion" ? `No entregada devolución - ${fmtFechaHora(f.estatus_at).replace(",", "")}`
           : f.estatus === "no_entregado" ? `No se entregó - Cliente no Disponible - ${fmtFechaHora(f.estatus_at).replace(",", "")}` : "Por Entregar")}</div></div>
         <div><small>Bultos</small><div>${esc(f.bultos ?? "")}</div></div>
       </div>
+      ${CORRIGE && f.fecha_tra && f.estatus !== "recibida" ? `<div id="fechaTraBox" class="card stack hidden">
+        <strong>Modificar la fecha y hora Por Entregar</strong>
+        <div class="row">
+          <input id="fechaTraNueva" type="datetime-local" style="width:auto" aria-label="Fecha y hora Por Entregar">
+          <input id="fechaTraMotivo" placeholder="Motivo (opcional)" class="grow" style="flex:1 1 200px" maxlength="1000">
+        </div>
+        <div class="row" style="justify-content:flex-end"><button type="button" id="fechaTraCancelar">Cancelar</button>
+          <button type="button" class="primary" id="fechaTraGuardar">Guardar fecha</button></div>
+      </div>` : ""}
       ${f.comentario ? `<div><small>Comentario</small><div>${esc(f.comentario)}</div></div>` : ""}
       ${f.observacion_entrega ? `<div class="alert ok"><small>Observación de la entrega</small><div>${esc(f.observacion_entrega)}</div></div>` : ""}
       ${f.habilitada_reingreso ? '<div class="alert warn"><strong>Devuelta · habilitada para reingreso:</strong> puede cargarse de nuevo en una remesa nueva (Excel o foto). Este historial se conserva.</div>' : ""}
@@ -952,18 +962,41 @@
     const mostrarError = (e) => { $("#dlgErr").textContent = e.message; $("#dlgErr").classList.remove("hidden"); };
     // Tras un cambio se vuelve a abrir la ficha: selector, historial y tiempos quedan sincronizados
     const recargar = () => { alCambiar && alCambiar(); dlg.close(); verFactura(f.id, alCambiar); };
+    if ($("#btnFechaTra")) {
+      $("#btnFechaTra").onclick = () => {
+        $("#fechaTraNueva").value = fechaHoraLocal(new Date(f.fecha_tra));
+        $("#fechaTraNueva").max = fechaHoraLocal(new Date());
+        if (f.fecha_alm) $("#fechaTraNueva").min = fechaHoraLocal(new Date(f.fecha_alm));
+        $("#fechaTraBox").classList.remove("hidden");
+      };
+      $("#fechaTraCancelar").onclick = () => $("#fechaTraBox").classList.add("hidden");
+      $("#fechaTraGuardar").onclick = async () => {
+        $("#fechaTraGuardar").disabled = true;
+        try {
+          const valor = $("#fechaTraNueva").value;
+          if (!valor) throw new Error("Indique la fecha y hora Por Entregar");
+          const cuando = new Date(valor);
+          if (cuando > new Date()) throw new Error("La fecha y hora no puede ser posterior a este momento");
+          await api(`/api/facturas/${f.id}/fecha-por-entregar`, { method: "PUT",
+            body: { fecha: cuando.toISOString(), motivo: $("#fechaTraMotivo").value.trim() || null } });
+          toast("Fecha Por Entregar actualizada"); recargar();
+        } catch (e) { mostrarError(e); $("#fechaTraGuardar").disabled = false; }
+      };
+    }
     // Seleccionar el estatus y adjuntar las fotos en el mismo paso; se guarda todo con «Guardar»
     const nuevo = () => $("#nuevoEst").value;
     const cambia = () => nuevo() !== f.estatus;
-    const conFecha = () => cambia() && ["entregada", "no_entregado"].includes(nuevo());
+    const conFecha = () => cambia() && ["en_transito", "entregada", "no_entregado"].includes(nuevo());
     const fotoObligatoria = () => cambia() && (nuevo() === "no_entregado" || (nuevo() === "entregada" && !f.tiene_foto));
     const motivoObligatorio = () => cambia() && (nuevo() === "no_entregado" || ORDEN_EST[nuevo()] < ORDEN_EST[f.estatus]);
     const sincronizar = () => {
       $("#fechaBox").classList.toggle("hidden", !conFecha());
-      $("#fechaLbl").textContent = nuevo() === "no_entregado" ? "Fecha y hora de la no entrega" : "Fecha y hora de recepción";
+      $("#fechaLbl").textContent = { no_entregado: "Fecha y hora de la no entrega", en_transito: "Fecha y hora Por Entregar" }[nuevo()]
+        || "Fecha y hora de recepción";
       if (conFecha() && !$("#recepcionAt").value) $("#recepcionAt").value = fechaHoraLocal(new Date());
       $("#recepcionAt").max = fechaHoraLocal(new Date());
-      if (f.fecha_tra) $("#recepcionAt").min = fechaHoraLocal(new Date(f.fecha_tra));
+      const desde = nuevo() === "en_transito" ? f.fecha_alm : f.fecha_tra;
+      $("#recepcionAt").min = desde ? fechaHoraLocal(new Date(desde)) : "";
       // Mismo estatus: solo se pueden adjuntar fotos si ese estatus aún no tiene ninguna
       const fotosVisibles = cambia() || f.adjuntar_foto;
       $("#fotosBox").classList.toggle("hidden", !fotosVisibles);
@@ -1435,6 +1468,7 @@
       empresa_creada: "Empresa creada", empresa_editada: "Empresa editada", empresa_eliminada: "Empresa eliminada", empresa_desactivada: "Empresa desactivada",
       base_inicializada: "Base de datos inicializada (limpieza)",
       empresa_transporte_cambiada: "Empresa de transporte cambiada (remesa y sus facturas)",
+      fecha_por_entregar_modificada: "Fecha Por Entregar modificada (factura)",
     };
     const eventos = await api("/api/admin/auditoria?limite=300");
     const nombre = new Map(usuarios.map((u) => [u.id, `${u.nombre} (${u.username})`]));
@@ -1541,56 +1575,227 @@
           <input name="ruta" placeholder="Ruta (ej. /api/conductor)" style="width:200px" aria-label="Ruta">
           <input name="conexion_id" placeholder="Conexión" style="width:140px" aria-label="Conexión">
           <input name="q" type="search" placeholder="Usuario o ruta…" style="flex:1 1 160px;width:auto" aria-label="Buscar">
-          <button type="submit" class="primary">Filtrar</button>
         </div>
         <small id="dErr" class="lvl-error" role="alert"></small>
+        <div class="row"><button type="submit" class="primary">Visualizar por pantalla</button>
+          <button type="button" id="dXls">Descargar Excel</button><button type="button" id="dPrint">Imprimir</button></div>
       </form>
       <div id="datTot" class="grid" style="margin-top:12px"></div>
+      <div id="datGraf" class="stack" style="margin-top:12px"></div>
       <div id="datOut" class="card table-wrap" style="margin-top:12px"></div>`;
     const LIM = 50;
-    const cargar = async (offset = 0) => {
+    const charts = [];
+    const params = () => {
       const fd = new FormData($("#datF"));
-      if (fd.get("desde") && fd.get("hasta") && fd.get("desde") > fd.get("hasta")) { $("#dErr").textContent = "La fecha Desde no puede ser posterior a Hasta."; return; }
+      if (fd.get("desde") && fd.get("hasta") && fd.get("desde") > fd.get("hasta")) { $("#dErr").textContent = "La fecha Desde no puede ser posterior a Hasta."; return null; }
       $("#dErr").textContent = "";
-      const p = new URLSearchParams([...fd].filter(([, x]) => x));
+      return new URLSearchParams([...fd].filter(([, x]) => x));
+    };
+    const totalesHtml = (t) => [["Total usado", fmtBytes(t.bytes_total)], ["Enviado", fmtBytes(t.bytes_subida)], ["Recibido", fmtBytes(t.bytes_bajada)],
+      ["Solicitudes", t.solicitudes.toLocaleString("es-VE")], ["Conexiones", t.conexiones], ["Conductores", t.conductores]]
+      .map(([k, x]) => `<div class="card"><small>${esc(k)}</small><div><strong>${esc(x)}</strong></div></div>`).join("");
+    const tablaHtml = (r) => {
+      const cols = columnasDatos(r.agrupar);
+      return `<table><tr>${cols.map(([h]) => `<th>${esc(h)}</th>`).join("")}<th>Solicitudes</th><th>Enviado</th><th>Recibido</th><th>Total</th></tr>
+        ${r.items.map((x) => `<tr>${cols.map(([, f]) => `<td>${f(x)}</td>`).join("")}<td>${esc(x.solicitudes)}</td>
+          <td>${esc(fmtBytes(x.bytes_subida))}</td><td>${esc(fmtBytes(x.bytes_bajada))}</td><td><strong>${esc(fmtBytes(x.bytes_total))}</strong></td></tr>`).join("")}</table>`;
+    };
+    async function pintarGraficas(g) {
+      charts.splice(0).forEach((c) => c.destroy());
+      const box = $("#datGraf");
+      if (!g || !g.conductores.length) { box.innerHTML = ""; return; }
+      const altoCon = Math.max(260, g.conexiones.length * 30 + 90);
+      box.innerHTML = `<section class="card ind-grafica" aria-label="Gráficas de Datos de Navegación">
+          <div class="ind-scroll"><div class="ind-lienzo" style="${window.innerWidth >= 640 ? `min-width:${g.conductores.length * 110}px` : ""}">
+            <canvas id="dgCond" role="img" aria-label="Enviado y Recibido por conductor"></canvas></div></div>
+          <div class="row" style="align-items:stretch;flex-wrap:wrap">
+            <div style="flex:1 1 280px;position:relative;height:300px"><canvas id="dgDona" role="img" aria-label="Enviado frente a Recibido"></canvas></div>
+            <div style="flex:2 1 420px;position:relative;height:${altoCon}px"><canvas id="dgCon" role="img" aria-label="Consumo total por conexión"></canvas></div>
+          </div>
+          <small class="muted">Las gráficas usan todas las filas del filtro (no solo la página): hasta 20 conductores y 15 conexiones, de mayor a menor consumo.
+            Pase el cursor sobre una barra para ver el detalle.</small>
+        </section>`;
+      try {
+        const Chart = await IndicadorGrafica.cargar();
+        for (const [id, tipo] of [["#dgCond", "conductores"], ["#dgDona", "dona"], ["#dgCon", "conexiones"]]) {
+          charts.push(new Chart($(id), configConsumo(tipo, g, true)));
+        }
+      } catch (e) { box.innerHTML = `<div class="alert err">${esc(e.message)}</div>`; }
+    }
+    const cargar = async (offset = 0, conGraficas = true) => {
+      const p = params();
+      if (!p) return;
       p.set("limit", LIM); p.set("offset", offset);
       const out = $("#datOut");
       out.innerHTML = '<span class="muted">Cargando…</span>';
       try {
         const r = await api("/api/admin/consumo-datos?" + p);
-        const t = r.totales;
-        $("#datTot").innerHTML = [["Total usado", fmtBytes(t.bytes_total)], ["Enviado", fmtBytes(t.bytes_subida)], ["Recibido", fmtBytes(t.bytes_bajada)],
-          ["Solicitudes", t.solicitudes.toLocaleString("es-VE")], ["Conexiones", t.conexiones], ["Conductores", t.conductores]]
-          .map(([k, x]) => `<div class="card"><small>${esc(k)}</small><div><strong>${esc(x)}</strong></div></div>`).join("");
-        const ag = r.agrupar;
-        const quien = (x) => `${esc(x.usuario_nombre || "—")}<div><small class="mono muted">${esc(x.usuario || "")}${x.empresa_nombre ? " · " + esc(x.empresa_nombre) : ""}</small></div>`;
-        // Fecha y hora exactas de la primera y la última petición de la fila
-        const hora = (iso) => new Date(iso).toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-        const fechaHora = (x) => {
-          if (!x.desde) return "—";
-          const mismoDia = new Date(x.desde).toDateString() === new Date(x.hasta).toDateString();
-          return `<small>${esc(new Date(x.desde).toLocaleDateString("es-VE"))} ${esc(hora(x.desde))}${x.hasta && x.hasta !== x.desde
-            ? ` – ${mismoDia ? "" : esc(new Date(x.hasta).toLocaleDateString("es-VE")) + " "}${esc(hora(x.hasta))}` : ""}</small>`;
-        };
-        const FH = ["Fecha y hora", fechaHora];
-        const cols = {
-          detalle: [FH, ["Conductor", quien], ["Conexión", (x) => `<small class="mono">${esc((x.conexion_id || "").slice(0, 8))}</small>`],
-            ["Ruta", (x) => `<small class="mono">${esc(x.metodo)} ${esc(x.ruta)}</small>`], ["Red", (x) => esc(x.tipo_efectivo || "—")]],
-          conductor: [["Conductor", quien], FH, ["Conexiones", (x) => esc(x.conexiones)]],
-          dia: [["Fecha", (x) => esc(fmtFecha(x.dia))], FH, ["Conductores", (x) => esc(x.conductores)], ["Conexiones", (x) => esc(x.conexiones)]],
-          ruta: [["Ruta", (x) => `<small class="mono">${esc(x.metodo)} ${esc(x.ruta)}</small>`], FH, ["Conductores", (x) => esc(x.conductores)]],
-          conexion: [["Conexión", (x) => `<small class="mono">${esc((x.conexion_id || "").slice(0, 8))}</small>`], ["Conductor", quien],
-            FH, ["Red", (x) => esc(x.tipo_efectivo || "—")]],
-        }[ag];
-        out.innerHTML = r.items.length ? `<table><tr>${cols.map(([h]) => `<th>${esc(h)}</th>`).join("")}<th>Solicitudes</th><th>Enviado</th><th>Recibido</th><th>Total</th></tr>
-          ${r.items.map((x) => `<tr>${cols.map(([, f]) => `<td>${f(x)}</td>`).join("")}<td>${esc(x.solicitudes)}</td>
-            <td>${esc(fmtBytes(x.bytes_subida))}</td><td>${esc(fmtBytes(x.bytes_bajada))}</td><td><strong>${esc(fmtBytes(x.bytes_total))}</strong></td></tr>`).join("")}</table>
-          ${paginador(r.total, offset, LIM)}` : '<span class="muted">Sin consumo de datos móviles para el filtro indicado.</span>';
+        $("#datTot").innerHTML = totalesHtml(r.totales);
+        if (conGraficas) await pintarGraficas(r.grafica && { ...r.grafica, totales: r.totales });
+        out.innerHTML = r.items.length ? `${tablaHtml(r)}${paginador(r.total, offset, LIM)}`
+          : '<span class="muted">Sin consumo de datos móviles para el filtro indicado.</span>';
       } catch (ex) { out.innerHTML = `<div class="alert err">${esc(ex.message)}</div>`; }
     };
     $("#datF").onsubmit = (e) => { e.preventDefault(); cargar(0); };
-    $("#datOut").onclick = (e) => { if (e.target.dataset.pag) cargar(Number(e.target.dataset.pag)); };
+    $("#datOut").onclick = (e) => { if (e.target.dataset.pag) cargar(Number(e.target.dataset.pag), false); };
+    $("#dXls").onclick = () => {
+      const p = params();
+      if (p) TL.download("/api/admin/consumo-datos.xlsx?" + p, "Datos_Navegacion.xlsx").catch((e) => toast(e.message));
+    };
+    // Imprimir: totales, las tres gráficas y todas las filas (no solo la página)
+    $("#dPrint").onclick = async () => {
+      const p = params();
+      if (!p) return;
+      try {
+        p.set("limit", 5000); p.set("offset", 0);
+        const r = await api("/api/admin/consumo-datos?" + p);
+        if (!r.total) { toast("Sin consumo de datos móviles para el filtro indicado"); return; }
+        let graficas = "";
+        try {
+          const g = r.grafica && { ...r.grafica, totales: r.totales };
+          if (g && g.conductores.length) {
+            for (const [tipo, w, h] of [["conductores", Math.max(1000, g.conductores.length * 90), 420], ["dona", 520, 360],
+              ["conexiones", 1000, Math.max(300, g.conexiones.length * 30 + 90)]]) {
+              graficas += `<img class="graf${tipo === "dona" ? " dona" : ""}" src="${await imagenConsumo(tipo, g, w, h)}" alt="">`;
+            }
+          }
+        } catch (_) { graficas = ""; }
+        const fd = new FormData($("#datF"));
+        const filtro = [fd.get("desde") && `Desde ${fmtFecha(fd.get("desde"))}`, fd.get("hasta") && `hasta ${fmtFecha(fd.get("hasta"))}`,
+          AGRUPAR_DATOS[r.agrupar]].filter(Boolean).join(" · ");
+        const t = r.totales;
+        const doc = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Datos de Navegación</title><style>
+          body{font:10px Arial,sans-serif;margin:12px;color:#000} h1{font-size:15px;margin:0 0 4px} p{margin:2px 0} small{font-size:9px}
+          table{border-collapse:collapse;width:100%;margin-top:8px} th,td{border:1px solid #888;padding:2px 4px;vertical-align:top;text-align:left}
+          th{background:#d9d9d9} .muted{color:#555} .mono{font-family:monospace} .k{display:inline-block;margin-right:14px} @page{size:landscape;margin:10mm}
+          .graf{display:block;width:100%;max-width:1000px;margin:10px auto;page-break-inside:avoid} .graf.dona{max-width:420px}</style></head><body>
+          <h1>Datos de Navegación (datos móviles de la app del conductor)</h1><p>${esc(filtro)}</p>
+          <p>Generado: ${esc(new Date().toLocaleString("es-VE"))}</p>
+          <p>${[["Total usado", fmtBytes(t.bytes_total)], ["Enviado", fmtBytes(t.bytes_subida)], ["Recibido", fmtBytes(t.bytes_bajada)],
+            ["Solicitudes", t.solicitudes.toLocaleString("es-VE")], ["Conexiones", t.conexiones], ["Conductores", t.conductores]]
+            .map(([k, x]) => `<span class="k"><b>${k}:</b> ${esc(x)}</span>`).join("")}</p>
+          ${graficas}
+          ${r.total > r.items.length ? `<p><b>Se imprimen las primeras ${r.items.length} de ${r.total} filas.</b></p>` : ""}
+          ${tablaHtml(r)}</body></html>`;
+        const fr = document.createElement("iframe");
+        fr.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
+        document.body.appendChild(fr);
+        fr.onload = () => { fr.contentWindow.focus(); fr.contentWindow.print(); setTimeout(() => fr.remove(), 60000); };
+        fr.srcdoc = doc;
+      } catch (e) { toast(e.message); }
+    };
     await cargar(0);
+  }
+
+  // Columnas de la tabla de Datos de Navegación según la agrupación
+  function columnasDatos(ag) {
+    const quien = (x) => `${esc(x.usuario_nombre || "—")}<div><small class="mono muted">${esc(x.usuario || "")}${x.empresa_nombre ? " · " + esc(x.empresa_nombre) : ""}</small></div>`;
+    // Fecha y hora exactas de la primera y la última petición de la fila
+    const FH = ["Fecha y hora", (x) => `<small>${esc(rangoFechaHora(x))}</small>`];
+    const conexion = (x) => `<small class="mono">${esc((x.conexion_id || "").slice(0, 8))}</small>`;
+    const ruta = (x) => `<small class="mono">${esc(x.metodo)} ${esc(x.ruta)}</small>`;
+    return {
+      detalle: [FH, ["Conductor", quien], ["Conexión", conexion], ["Ruta", ruta], ["Red", (x) => esc(x.tipo_efectivo || "—")]],
+      conductor: [["Conductor", quien], FH, ["Conexiones", (x) => esc(x.conexiones)]],
+      dia: [["Fecha", (x) => esc(fmtFecha(x.dia))], FH, ["Conductores", (x) => esc(x.conductores)], ["Conexiones", (x) => esc(x.conexiones)]],
+      ruta: [["Ruta", ruta], FH, ["Conductores", (x) => esc(x.conductores)]],
+      conexion: [["Conexión", conexion], ["Conductor", quien], FH, ["Red", (x) => esc(x.tipo_efectivo || "—")]],
+    }[ag];
+  }
+  function rangoFechaHora(x) {
+    if (!x.desde) return "—";
+    const hora = (iso) => new Date(iso).toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const d = new Date(x.desde), h = new Date(x.hasta || x.desde);
+    const ini = `${d.toLocaleDateString("es-VE")} ${hora(x.desde)}`;
+    if (h.getTime() === d.getTime()) return ini;
+    return `${ini} – ${d.toDateString() === h.toDateString() ? "" : h.toLocaleDateString("es-VE") + " "}${hora(x.hasta)}`;
+  }
+
+  // Gráficas de Datos de Navegación (Chart.js, mismos colores que el Indicador de Gestión)
+  const COLOR_DATOS = { subida: "#4472C4", bajada: "#ED7D31", total: "#A5A5A5" };
+  const fondoBlanco = { id: "tlFondoDatos", beforeDraw(c) {
+    const { ctx, width, height } = c;
+    ctx.save(); ctx.globalCompositeOperation = "destination-over"; ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, width, height); ctx.restore();
+  } };
+  // Valor (KB / MB) encima de cada barra
+  const valoresBarras = { id: "tlValoresDatos", afterDatasetsDraw(c) {
+    const { ctx } = c;
+    const horizontal = c.options.indexAxis === "y";
+    c.data.datasets.forEach((ds, di) => {
+      const meta = c.getDatasetMeta(di);
+      if (meta.hidden || ds.sinEtiquetas) return;
+      meta.data.forEach((b, i) => {
+        const valor = horizontal ? ds.totales[i] : ds.data[i];
+        if (!valor) return;
+        ctx.save(); ctx.font = "bold 10px Calibri, 'Segoe UI', Arial, sans-serif"; ctx.fillStyle = "#333";
+        if (horizontal) { ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(fmtBytes(valor), b.x + 4, b.y); }
+        else { ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText(fmtBytes(valor), b.x, b.y - 2); }
+        ctx.restore();
+      });
+    });
+  } };
+  function configConsumo(tipo, g, animar) {
+    const gris = "#595959", fuente = { family: "Calibri, Carlito, 'Segoe UI', Arial, sans-serif" };
+    const titulo = (text) => ({ display: true, text, color: gris, font: { ...fuente, size: 17, weight: "normal" }, padding: { top: 4, bottom: 10 } });
+    const leyenda = { position: "bottom", labels: { color: gris, font: { ...fuente, size: 12 }, boxWidth: 11, boxHeight: 11 } };
+    const ejeBytes = { beginAtZero: true, ticks: { color: gris, callback: (v) => fmtBytes(v) }, grid: { color: "#d9d9d9" } };
+    const ejeCat = { ticks: { color: gris, autoSkip: false, maxRotation: 30 }, grid: { display: false } };
+    const base = { responsive: true, maintainAspectRatio: false, animation: animar ? { duration: 500 } : false };
+    if (tipo === "dona") {
+      const s = [g.totales.bytes_subida, g.totales.bytes_bajada];
+      const tot = s[0] + s[1] || 1;
+      return {
+        type: "doughnut",
+        data: { labels: [`Enviado: ${fmtBytes(s[0])} (${(100 * s[0] / tot).toFixed(1)} %)`, `Recibido: ${fmtBytes(s[1])} (${(100 * s[1] / tot).toFixed(1)} %)`],
+          datasets: [{ data: s, backgroundColor: [COLOR_DATOS.subida, COLOR_DATOS.bajada], borderColor: "#fff" }] },
+        options: { ...base, cutout: "55%", plugins: { title: titulo("Enviado y Recibido"), legend: leyenda,
+          tooltip: { callbacks: { label: (c) => ` ${c.label}` } } } },
+        plugins: [fondoBlanco],
+      };
+    }
+    if (tipo === "conductores") {
+      const xs = g.conductores;
+      const ds = (label, clave, color) => ({ label, data: xs.map((x) => x[clave]), backgroundColor: color, maxBarThickness: 46 });
+      return {
+        type: "bar",
+        data: { labels: xs.map((x) => x.usuario_nombre || x.usuario || "—"),
+          datasets: [ds("Enviado", "bytes_subida", COLOR_DATOS.subida), ds("Recibido", "bytes_bajada", COLOR_DATOS.bajada), ds("Total", "bytes_total", COLOR_DATOS.total)] },
+        options: { ...base, plugins: { title: titulo("Enviado y Recibido por conductor"), legend: leyenda,
+          tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${fmtBytes(c.raw)}`,
+            footer: (it) => it.length ? `Conexiones: ${xs[it[0].dataIndex].conexiones} · solicitudes: ${xs[it[0].dataIndex].solicitudes}` : "" } } },
+        scales: { x: ejeCat, y: ejeBytes } },
+        plugins: [fondoBlanco, valoresBarras],
+      };
+    }
+    // Consumo total por conexión (cada vez que el conductor abrió la app): Enviado + Recibido apilados
+    const xs = g.conexiones;
+    const etiqueta = (x) => `${x.usuario_nombre || x.usuario || "—"} · ${(x.conexion_id || "").slice(0, 8)} · ${x.desde ? new Date(x.desde).toLocaleString("es-VE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}`;
+    const totales = xs.map((x) => x.bytes_total);
+    return {
+      type: "bar",
+      data: { labels: xs.map(etiqueta), datasets: [
+        { label: "Enviado", data: xs.map((x) => x.bytes_subida), backgroundColor: COLOR_DATOS.subida, sinEtiquetas: true, maxBarThickness: 22 },
+        { label: "Recibido", data: xs.map((x) => x.bytes_bajada), backgroundColor: COLOR_DATOS.bajada, totales, maxBarThickness: 22 }] },
+      options: { ...base, indexAxis: "y", layout: { padding: { right: 60 } },
+        plugins: { title: titulo("Consumo total por conexión"), legend: leyenda,
+          tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${fmtBytes(c.raw)}`,
+            footer: (it) => it.length ? `Total: ${fmtBytes(totales[it[0].dataIndex])} · ${rangoFechaHora(xs[it[0].dataIndex])}` : "" } } },
+        scales: { x: { ...ejeBytes, stacked: true }, y: { ...ejeCat, stacked: true } } },
+      plugins: [fondoBlanco, valoresBarras],
+    };
+  }
+  async function imagenConsumo(tipo, g, ancho, alto) {
+    const Chart = await IndicadorGrafica.cargar();
+    const caja = document.createElement("div");
+    caja.style.cssText = `position:fixed;left:-10000px;top:0;width:${ancho}px;height:${alto}px`;
+    const canvas = document.createElement("canvas");
+    caja.appendChild(canvas); document.body.appendChild(caja);
+    const config = configConsumo(tipo, g, false);
+    config.options.devicePixelRatio = 2;
+    const chart = new Chart(canvas, config);
+    const url = chart.toBase64Image("image/png", 1);
+    chart.destroy(); caja.remove();
+    return url;
   }
 
   // Archivo por mes o por año: saca períodos cerrados de la bitácora activa y los guarda comprimidos

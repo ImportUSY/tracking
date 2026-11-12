@@ -106,6 +106,7 @@ class AccionAuditoria(str, Enum):
     EMPRESA_TRANSPORTE_CAMBIADA = "empresa_transporte_cambiada"  # remesa y sus facturas a otra empresa
     BIOMETRIA_ACTIVADA = "biometria_activada"  # el usuario registró la huella/rostro de un teléfono
     BIOMETRIA_ELIMINADA = "biometria_eliminada"  # la quitó él mismo o se revocó al restablecer su clave
+    FECHA_POR_ENTREGAR_MODIFICADA = "fecha_por_entregar_modificada"  # Supervisor/Transportista en la factura
 
 
 class EstadoImportacion(str, Enum):

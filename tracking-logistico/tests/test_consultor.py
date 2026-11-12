@@ -84,7 +84,8 @@ def test_consultor_ve_todo_y_no_cambia_nada(client: TestClient, sup: dict[str, s
     p_sup = client.get("/api/me/permisos", headers=sup).json()
     # ...salvo los montos de las facturas: solo SUPERVISOR y COBRANZAS
     assert p_co["solo_consulta"] is True
-    assert sorted(p_co["permisos_interfaz"]) == sorted(set(p_sup["permisos"]) - {"facturas.montos.ver"})
+    assert sorted(p_co["permisos_interfaz"]) == sorted(
+        set(p_sup["permisos"]) - {"facturas.montos.ver", "feriados.gestionar"})
     assert "remesas.eliminar" in p_co["permisos_interfaz"] and "remesas.eliminar" not in p_co["permisos"]
     assert p_sup["solo_consulta"] is False and p_sup["permisos_interfaz"] == p_sup["permisos"]
     assert client.get("/api/remesas", headers=sup).json()["total"] == rem_sup["total"]  # nada cambió

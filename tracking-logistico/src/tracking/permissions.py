@@ -183,9 +183,9 @@ def permisos_de(user_or_rol: Usuario | Rol | str, settings: Settings) -> frozens
 def permisos_interfaz(user: Usuario, settings: Settings) -> frozenset[Permiso]:
     """Lo que la interfaz muestra. Igual a los permisos reales, salvo el CONSULTOR: ve todos los botones
     del SUPERVISOR (así conoce el sistema completo), pero el servidor rechaza cualquier cambio suyo.
-    Los montos de las facturas no: esos solo los ven SUPERVISOR y COBRANZAS."""
+    Los montos de las facturas no (solo SUPERVISOR y COBRANZAS) ni el menú Feriados (solo SUPERVISOR)."""
     if _rol(user) == Rol.CONSULTOR:
-        return permisos_de(Rol.SUPERVISOR, settings) - {Permiso.FACTURAS_MONTOS_VER}
+        return permisos_de(Rol.SUPERVISOR, settings) - {Permiso.FACTURAS_MONTOS_VER, Permiso.FERIADOS_GESTIONAR}
     return permisos_de(user, settings)
 
 

@@ -307,11 +307,19 @@ class TotalesConsumoOut(BaseModel):
     conductores: int
 
 
+class GraficaConsumoOut(BaseModel):
+    """Conductores (Enviado / Recibido) y conexiones de mayor consumo, con todas las filas del filtro."""
+
+    conductores: list[ConsumoFilaOut] = []
+    conexiones: list[ConsumoFilaOut] = []
+
+
 class PaginaConsumo(BaseModel):
     agrupar: str
     total: int
     items: list[ConsumoFilaOut]
     totales: TotalesConsumoOut
+    grafica: GraficaConsumoOut | None = None
 
 
 class ArchivarBitacoraIn(BaseModel):
@@ -620,10 +628,15 @@ class CambioEstatusAdminIn(BaseModel):
     estatus: Estatus
     motivo: str | None = Field(default=None, max_length=1000)
     ocurrido_at: datetime | None = Field(
-        default=None, description="Fecha y hora de recepción (obligatoria al pasar a Entregada)")
+        default=None, description="Fecha y hora del estatus (obligatoria al pasar a Entregada)")
     foto_id: str | None = Field(default=None, max_length=36, description="Foto ya subida con PUT /api/fotos/{id}")
     foto_ids: list[str] = Field(default_factory=list, max_length=10,
                                 description="Fotos adicionales del mismo cambio (ya subidas)")
+
+
+class FechaPorEntregarIn(BaseModel):
+    fecha: datetime = Field(description="Nueva fecha y hora del estatus Por Entregar")
+    motivo: str | None = Field(default=None, max_length=1000)
 
 
 class AdjuntarFotoIn(BaseModel):

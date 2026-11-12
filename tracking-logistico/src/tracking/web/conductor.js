@@ -155,12 +155,12 @@
     }, extra));
   }
 
-  async function lote(estatus) {
+  async function lote(estatus, ocurridoAt = null) {
     const lista = merged();
     let n = 0;
     for (const id of state.sel) {
       const f = lista.find((x) => x.id === id);
-      if (f && ORDEN[f.estatusVista] < ORDEN[estatus]) { await encolar(id, estatus); n++; }
+      if (f && ORDEN[f.estatusVista] < ORDEN[estatus]) { await encolar(id, estatus, ocurridoAt ? { ocurrido_at: ocurridoAt } : {}); n++; }
     }
     state.sel.clear();
     await refreshLocal();
@@ -281,7 +281,53 @@
     const id = e.target.dataset.okrech;
     if (id) { await Outbox.clearRechazado(id); await refreshLocal(); }
   });
-  $$("[data-lote]").forEach((b) => b.addEventListener("click", () => lote(b.dataset.lote)));
+  $$("[data-lote]").forEach((b) => b.addEventListener("click", () =>
+    (b.dataset.lote === "en_transito" ? abrirPorEntregar() : lote(b.dataset.lote))));
+
+  // Por Entregar: la fecha y hora actual del teléfono o la que indique el conductor
+  const MAX_ANTIGUEDAD_MS = 30 * 24 * 3600 * 1000;
+  const fechaHoraLocal = (d) => {
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
+  let peMinimo = null;
+  function modoPorEntregar(otra) {
+    $("#pePregunta").classList.toggle("hidden", otra);
+    $("#peOtra").classList.toggle("hidden", !otra);
+    for (const id of ["#peNo", "#peSi"]) $(id).classList.toggle("hidden", otra);
+    for (const id of ["#peCancelar", "#peConfirmar"]) $(id).classList.toggle("hidden", !otra);
+  }
+  function abrirPorEntregar() {
+    if (!state.sel.size) return;
+    const lista = merged().filter((f) => state.sel.has(f.id));
+    // No puede ser anterior a la fecha Preparado (en Preparado, estatus_at es ese momento) ni pasar de 30 días
+    const preparado = Math.max(0, ...lista.filter((f) => f.estatus === "recibida").map((f) => new Date(f.estatus_at).getTime()));
+    peMinimo = new Date(Math.max(preparado, Date.now() - MAX_ANTIGUEDAD_MS));
+    $("#peInfo").textContent = `${lista.length} factura(s) seleccionada(s)`;
+    $("#peAhora").textContent = TL.fmtFechaHora(new Date().toISOString());
+    $("#peFecha").value = fechaHoraLocal(new Date());
+    $("#peFecha").max = fechaHoraLocal(new Date());
+    $("#peFecha").min = fechaHoraLocal(peMinimo);
+    $("#peErr").classList.add("hidden");
+    modoPorEntregar(false);
+    $("#dlgPorEntregar").showModal();
+  }
+  $("#peSi").addEventListener("click", () => { $("#dlgPorEntregar").close(); lote("en_transito"); });
+  $("#peNo").addEventListener("click", () => { modoPorEntregar(true); $("#peFecha").focus(); });
+  $("#peCancelar").addEventListener("click", () => $("#dlgPorEntregar").close());
+  $("#formPorEntregar").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const err = $("#peErr");
+    const valor = $("#peFecha").value;
+    const cuando = valor ? new Date(valor) : null;
+    let msg = "";
+    if (!cuando || Number.isNaN(cuando.getTime())) msg = "Indique la fecha y hora.";
+    else if (cuando.getTime() > Date.now() + 60000) msg = "La fecha y hora no puede ser posterior a este momento.";
+    else if (cuando < new Date(peMinimo.getTime() - 60000)) msg = `La fecha y hora no puede ser anterior a ${TL.fmtFechaHora(peMinimo.toISOString())}.`;
+    if (msg) { err.textContent = msg; err.classList.remove("hidden"); return; }
+    $("#dlgPorEntregar").close();
+    lote("en_transito", new Date(Math.min(cuando.getTime(), Date.now())).toISOString());
+  });
   $$("[data-filtro]").forEach((b) => b.addEventListener("click", () => {
     $$("[data-filtro]").forEach((x) => x.classList.toggle("active", x === b));
     state.filtro = b.dataset.filtro; state.sel.clear(); render();

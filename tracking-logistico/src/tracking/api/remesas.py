@@ -9,14 +9,14 @@ responde 404, igual que uno inexistente.
 from __future__ import annotations
 
 import uuid
-from datetime import date, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import Exists, case, exists, func, or_, select
 from sqlalchemy.orm import Session, aliased, selectinload
 
 from tracking.config import Settings, get_settings
-from tracking.enums import Estatus, OrigenEvento
+from tracking.enums import AccionAuditoria, Estatus, OrigenEvento
 from tracking.models import CapturaFactura, EventoEstatus, Factura, Foto, Remesa, Usuario
 from tracking.permissions import (
     Permiso,
@@ -42,6 +42,7 @@ from tracking.schemas import (
     EventoOut,
     FacturaDetalleOut,
     FacturaOut,
+    FechaPorEntregarIn,
     FotoEventoOut,
     Pagina,
     ReasignarRemesaIn,
@@ -49,12 +50,13 @@ from tracking.schemas import (
     RemesaOut,
     TiemposProcesoOut,
 )
+from tracking.services import audit
 from tracking.services.consultas import conteos_por_remesa
 from tracking.services.empresa_transporte import CambioEmpresaInvalido, cambiar_empresa_remesa
 from tracking.services.feriados import fechas as fechas_feriados
 from tracking.services.status import EventoRechazado, aplicar_evento
 from tracking.services.tiempos import dias_entre_procesos
-from tracking.services.timeutil import local_day_bounds, to_local
+from tracking.services.timeutil import local_day_bounds, now_utc, to_local
 from tracking.services.tracking_codes import normalize_query
 
 router = APIRouter(prefix="/api", tags=["remesas"])
@@ -428,6 +430,8 @@ def cambiar_estatus_admin(
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                                 "La fecha y hora no puede ser anterior a la Fecha Por Entregar "
                                 f"({to_local(f.fecha_tra):%d/%m/%Y %H:%M})")
+    if cambia and body.ocurrido_at is not None and body.estatus == Estatus.EN_TRANSITO:
+        _validar_no_antes_de_preparado(f, _con_zona(body.ocurrido_at))
     try:
         res = aplicar_evento(
             db,
@@ -507,6 +511,70 @@ def adjuntar_foto(
     if f.estatus == Estatus.ENTREGADA.value:
         f.evidencia_foto_id, f.evidencia_at = ids[0], f.estatus_at
     f.version = (f.version or 0) + 1
+    db.commit()
+    db.refresh(f)
+    return _factura_out(f, user)
+
+
+def _con_zona(momento: datetime) -> datetime:
+    return momento if momento.tzinfo else momento.replace(tzinfo=timezone.utc)
+
+
+def _fmt(momento: datetime) -> str:
+    return f"{to_local(momento):%d/%m/%Y %H:%M}"
+
+
+def _validar_no_antes_de_preparado(f: Factura, cuando: datetime) -> None:
+    if f.fecha_alm is not None and cuando < f.fecha_alm:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            f"La fecha y hora no puede ser anterior a la Fecha Preparado ({_fmt(f.fecha_alm)})")
+
+
+@router.put("/facturas/{factura_id}/fecha-por-entregar", response_model=FacturaOut)
+def modificar_fecha_por_entregar(
+    factura_id: int,
+    body: FechaPorEntregarIn,
+    user: Usuario = Depends(require_permission(Permiso.FACTURAS_CORREGIR_ESTATUS)),
+    facturas: FacturaRepositorio = Depends(get_facturas),
+) -> FacturaOut:
+    """Modifica la fecha y hora del estatus Por Entregar (Supervisor y Transportista).
+
+    Debe quedar entre la Fecha Preparado y el estatus siguiente (No Entregado, Entregada o Devolución) y no
+    puede ser futura. Se corrige también el evento Por Entregar del historial y queda en la auditoría.
+    """
+    db = facturas.db
+    f = facturas.obtener(factura_id, bloquear=True, opciones=[selectinload(Factura.eventos)])
+    if f is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Factura no encontrada")
+    if f.fecha_tra is None or f.estatus == Estatus.RECIBIDA.value:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "La factura aún no está Por Entregar: cambie el estatus en «Estatus y fotos»")
+    cuando = _con_zona(body.fecha)
+    if cuando > now_utc() + timedelta(minutes=1):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "La fecha y hora no puede ser posterior a este momento")
+    _validar_no_antes_de_preparado(f, cuando)
+    anterior = f.fecha_tra
+    aplicados = [e for e in f.eventos if e.aplicado]
+    siguientes = [e.ocurrido_at for e in aplicados
+                  if Estatus(e.estatus).orden > Estatus.EN_TRANSITO.orden and e.ocurrido_at >= anterior]
+    if f.fecha_rec is not None:
+        siguientes.append(f.fecha_rec)
+    if siguientes and cuando > min(siguientes):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            f"La fecha y hora no puede ser posterior al estatus siguiente ({_fmt(min(siguientes))})")
+    evento = max((e for e in aplicados if e.estatus == Estatus.EN_TRANSITO.value and e.ocurrido_at <= anterior),
+                 key=lambda e: (e.ocurrido_at, e.recibido_at), default=None)
+    if evento is not None:
+        evento.ocurrido_at = cuando
+    f.fecha_tra = cuando
+    if f.estatus == Estatus.EN_TRANSITO.value:
+        f.estatus_at = cuando
+    f.version = (f.version or 0) + 1
+    audit.registrar(db, user, AccionAuditoria.FECHA_POR_ENTREGAR_MODIFICADA, detalle={
+        "factura": f.numero, "factura_id": f.id, "antes": _fmt(anterior), "despues": _fmt(cuando),
+        "motivo": (body.motivo or "").strip() or None,
+    })
     db.commit()
     db.refresh(f)
     return _factura_out(f, user)

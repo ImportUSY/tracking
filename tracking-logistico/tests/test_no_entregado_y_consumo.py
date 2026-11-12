@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import io
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 
 from tests.conftest import login
 from tests.factories import JPEG_MINIMO
@@ -260,6 +262,25 @@ def test_datos_de_navegacion(client: TestClient, sup: dict[str, str]) -> None:
     assert body["total"] == 2 and sorted(x["hora"] for x in body["items"]) == sorted({fila["hora"], otra_hora["hora"]})
     r = client.get("/api/admin/consumo-datos", headers=sup, params={"desde": hoy, "agrupar": "dia"})
     assert r.json()["total"] == 1  # las métricas por día no cambian
+
+    # Gráficas: Enviado / Recibido por conductor y consumo total por conexión (todas las filas del filtro)
+    g = r.json()["grafica"]
+    assert len(g["conductores"]) == 1 and g["conductores"][0]["bytes_subida"] == 2700
+    assert g["conductores"][0]["bytes_bajada"] == 45000 and g["conductores"][0]["conexiones"] == 1
+    con = g["conexiones"][0]
+    assert con["conexion_id"] == "abcd1234-0000" and con["bytes_total"] == 47700 and con["desde"]
+
+    # Excel: agrupación elegida + por conductor + por conexión, con gráficas
+    x = client.get("/api/admin/consumo-datos.xlsx", headers=sup, params={"desde": hoy, "hasta": hoy})
+    assert x.status_code == 200, x.text
+    assert x.headers["content-disposition"].endswith('.xlsx"')
+    wb = load_workbook(io.BytesIO(x.content))
+    assert wb.sheetnames == ["Datos de Navegación", "Por conductor", "Por conexión"]
+    assert wb["Datos de Navegación"]["A1"].value == "Fecha y hora" and wb["Datos de Navegación"].max_row == 3
+    assert len(wb["Por conductor"]._charts) == 1 and len(wb["Por conexión"]._charts) == 1
+    assert client.get("/api/admin/consumo-datos.xlsx", headers=ana).status_code == 403
+    vacio = client.get("/api/admin/consumo-datos.xlsx", headers=sup, params={"desde": "2020-01-01"})
+    assert vacio.status_code == 404
 
     # El envío automático de la medición no llena la bitácora
     bit = client.get("/api/admin/bitacora", headers=sup, params={"q": "/api/conductor/consumo"}).json()

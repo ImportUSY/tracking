@@ -72,6 +72,31 @@
     </form>
   </dialog>
 
+  <!-- Por Entregar: fecha y hora actual o indicada por el conductor -->
+  <dialog id="dlgPorEntregar">
+    <form method="dialog" id="formPorEntregar">
+      <div class="dlg-body stack">
+        <h2 style="margin-top:0">Por Entregar</h2>
+        <p id="peInfo" class="muted" style="margin:0"></p>
+        <div id="pePregunta">
+          <p style="margin:0">¿Desea tomar la fecha y hora actual?</p>
+          <p style="margin:6px 0 0"><strong id="peAhora"></strong></p>
+        </div>
+        <div id="peOtra" class="hidden">
+          <label for="peFecha">Fecha y hora Por Entregar</label>
+          <input id="peFecha" type="datetime-local">
+        </div>
+        <div id="peErr" class="alert err hidden"></div>
+      </div>
+      <div class="dlg-foot">
+        <button type="button" id="peNo">No</button>
+        <button type="button" class="primary" id="peSi">Sí</button>
+        <button type="button" id="peCancelar" class="hidden">Cancelar</button>
+        <button type="submit" class="primary hidden" id="peConfirmar">Confirmar</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Mis datos -->
   <dialog id="dlgPerfil">
     <form method="dialog" id="formPerfil">

@@ -1,0 +1,56 @@
+[2026-11-09 08:33:51] Base de datos: PRODUCCIÓN · PostgreSQL ep-ancient-silence-b7o081wn.c-13.us-east-1.aws.neon.tech/neondb
+[2026-11-09 08:33:52] Conectando a Neon…
+[2026-11-09 08:34:16] Neon no respondió (intento 1 de 1). Reintento en 2 s…
+[2026-11-09 08:34:18] El puerto de Postgres (5432) no responde desde esta red. El sitio publicado sí entra. Se continúa por HTTPS, que es el camino que esta red deja pasar.
+[2026-11-09 08:34:18] Base de datos: PRODUCCIÓN por HTTPS · PostgreSQL ep-ancient-silence-b7o081wn-pooler.c-13.us-east-1.aws.neon.tech/neondb
+[2026-11-09 08:34:19] Situación actual:
+                                       Antes   Después
+  [SE VACÍA]
+  Remesas                                 83          
+  Facturas                              1207          
+  Historial de estatus                  1398          
+  Fotos                                   58          
+  Capturas de facturas (foto)             17          
+  Cargas de Excel                          6          
+  Conductores                              7          
+  Usuarios Conductor                       7          
+  Usuarios Transportista                   2          
+  Camiones                                 0          
+  Empresas de transporte                   3          
+  Vendedores                              86          
+  Auditoría de seguridad                  39          
+  Bitácora                              2295          
+  Bitácora archivada                       0          
+  Consultas públicas                      71          
+  Datos de Navegación                     66          
+  [SE CONSERVA]
+  Feriados                                97          
+  Usuarios Supervisor                      1          
+  Usuarios Cobranzas                       1          
+  Usuarios Consultor                       3          
+[2026-11-09 08:34:19] SIMULACIÓN por HTTPS: no se envió ninguna orden de borrado. La base no cambió.
+[2026-11-09 08:34:19] Resultado:
+                                       Antes   Después
+  [SE VACÍA]
+  Remesas                                 83        83
+  Facturas                              1207      1207
+  Historial de estatus                  1398      1398
+  Fotos                                   58        58
+  Capturas de facturas (foto)             17        17
+  Cargas de Excel                          6         6
+  Conductores                              7         7
+  Usuarios Conductor                       7         7
+  Usuarios Transportista                   2         2
+  Camiones                                 0         0
+  Empresas de transporte                   3         3
+  Vendedores                              86        86
+  Auditoría de seguridad                  39        39
+  Bitácora                              2295      2295
+  Bitácora archivada                       0         0
+  Consultas públicas                      71        71
+  Datos de Navegación                     66        66
+  [SE CONSERVA]
+  Feriados                                97        97
+  Usuarios Supervisor                      1         1
+  Usuarios Cobranzas                       1         1
+  Usuarios Consultor                       3         3

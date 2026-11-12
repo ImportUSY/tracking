@@ -3,6 +3,7 @@
 
 Archivos
 --------
+  4 - INICIALIZAR BASE DE DATOS.bat ...... atajo (doble clic, mismo menú)
   Inicializar_BD_Tracking.bat ............ ejecutable (menú o modo desatendido)
   tracking-logistico\src\tracking\inicializar_bd.py ... lógica de limpieza y validación
   tracking-logistico\tests\test_inicializar_bd.py ..... pruebas automáticas (SQLite y PostgreSQL)
@@ -13,12 +14,16 @@ Qué hace
   SE VACÍA (queda en cero y los números de id vuelven a empezar en 1):
     - Remesas y facturas, con su historial de estatus, fotos de entrega/devolución,
       capturas de facturas por foto y cargas de Excel.
-    - Conductores y todos los usuarios con rol Conductor.
+    - Conductores y todos los usuarios Conductor.
+    - Usuarios Transportista.
     - Camiones (se cargan otra vez con la hoja PLACAS junto con los conductores).
-    - Auditoría de seguridad, Bitácora (también la archivada) y consultas públicas.
+    - Empresas de transporte y vendedores.
+    - Auditoría de seguridad, Bitácora (también la archivada), consultas públicas
+      y Datos de Navegación.
   SE CONSERVA INTACTO:
-    - Empresas, Vendedores, Feriados y los usuarios de oficina (Supervisor,
-      Transportista, Cobranzas y Consultor) con sus claves.
+    - Feriados.
+    - Los usuarios de rol Supervisor, Cobranzas y Consultor, con sus claves y
+      huella. Se les quita la empresa asignada (las empresas se vacían).
 
 Seguridad
 ---------
@@ -27,8 +32,8 @@ Seguridad
        produccion_AAAAMMDD_HHMMSS.jsonl.gz  todas las tablas de Neon (PostgreSQL)
        local_..._fotos\ ................... las fotos guardadas en disco se MUEVEN aquí
   2. Una sola transacción. Antes de confirmar se valida que:
-       - todas las tablas a vaciar estén en cero y no quede ningún usuario conductor;
-       - empresas, vendedores, feriados y usuarios de oficina tengan la misma cantidad
+       - todas las tablas a vaciar estén en cero y no quede ningún Conductor ni Transportista;
+       - feriados y los usuarios Supervisor, Cobranzas y Consultor tengan la misma cantidad
          de registros y EXACTAMENTE el mismo contenido (huella SHA-256 fila por fila);
        - ningún usuario quede apuntando a una empresa inexistente.
      Si algo no cuadra se deshace todo (código de salida 2) y la base no cambia.
@@ -37,32 +42,44 @@ Seguridad
 
 Cómo usarlo
 -----------
-  Doble clic en Inicializar_BD_Tracking.bat y elija:
+  Doble clic en «4 - INICIALIZAR BASE DE DATOS.bat» (o en Inicializar_BD_Tracking.bat) y elija:
      1  Simular en LOCAL        (muestra lo que haría, no cambia nada)
      2  Inicializar LOCAL       (tracking-logistico\data\tracking.db)
      3  Simular en PRODUCCIÓN   (no cambia nada)
      4  Inicializar PRODUCCIÓN  (base Neon que usa la página en Vercel)
 
+  Recomendado al instalar la versión final:
+     1. Publique con «2 - PUBLICAR EN VERCEL.bat».
+     2. Cierre «1 - PROBAR EN MI PC.bat» si lo tiene abierto.
+     3. Ejecute primero la opción 3 (simular en producción) y revise el resumen.
+     4. Ejecute la opción 4 y, cuando pida confirmación, escriba: BORRAR PRODUCCION
+
   Desatendido (programador de tareas, otro script), sin preguntas:
-     Inicializar_BD_Tracking.bat local --si
-     Inicializar_BD_Tracking.bat produccion --si
-     Inicializar_BD_Tracking.bat produccion --simular
+     4 - INICIALIZAR BASE DE DATOS.bat local --si
+     4 - INICIALIZAR BASE DE DATOS.bat produccion --si
+     4 - INICIALIZAR BASE DE DATOS.bat produccion --simular
 
   Códigos de salida: 0 terminado · 1 cancelado o error · 2 validación fallida (sin cambios)
 
 Requisitos
 ----------
-  - El entorno del proyecto (tracking-logistico\.venv), que crea scripts\probar_local.bat.
+  - El entorno del proyecto (tracking-logistico\.venv), que crea «1 - PROBAR EN MI PC.bat».
   - LOCAL: usa DATABASE_URL de tracking-logistico\.env. Cierre antes probar_local.bat.
   - PRODUCCIÓN: usa la conexión de tracking-logistico\.env.local (se obtiene con
     «vercel env pull .env.local») y necesita internet. La base debe estar en la
     misma versión que el sistema publicado (si no, avisa y no borra nada).
+  - Si el puerto 5432 de Neon no responde desde esta red (mensaje «server closed
+    the connection» o tiempo agotado), el programa sigue por HTTPS, que es el
+    camino que sí deja pasar. No se borra nada hasta que usted escriba BORRAR PRODUCCION.
+    El respaldo de ese camino no incluye el archivo de cada foto, solo sus datos.
 
 Después de inicializar
 ----------------------
-  - Los conductores ya no pueden entrar: cárguelos otra vez (hoja PLACAS o Conductores → Nuevo).
-    Entrarán con la clave temporal qwerty.
+  - Los conductores y transportistas ya no pueden entrar. Cree otra vez las empresas,
+    luego los transportistas, y cargue conductores (hoja PLACAS o Conductores → Nuevo).
+    Entrarán con la clave temporal.
   - Cargue las remesas nuevas desde «Cargar REMESA».
+  - Supervisor, Cobranzas y Consultor entran con la misma clave de siempre.
   - Restaurar la base LOCAL: cierre la aplicación y copie respaldos_bd\local_....db sobre
     tracking-logistico\data\tracking.db.
   - Los respaldos contienen datos reales: guárdelos en un lugar seguro.
